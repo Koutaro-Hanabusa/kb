@@ -43,12 +43,15 @@ impl Notebook {
     /// Read and parse every note. Unreadable files are skipped rather than
     /// failing the whole walk.
     pub fn notes(&self) -> Vec<Note> {
-        self.note_paths().into_iter().filter_map(|path| self.read(&path).ok()).collect()
+        self.note_paths()
+            .into_iter()
+            .filter_map(|path| self.read(&path).ok())
+            .collect()
     }
 
     pub fn read(&self, path: &Path) -> Result<Note> {
-        let raw = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let raw =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         Ok(Note::parse(&raw, path, &self.name, &self.relative(path)))
     }
 
@@ -70,7 +73,9 @@ impl Workspace {
     pub fn discover() -> Result<Self> {
         let root = match std::env::var_os(ROOT_ENV) {
             Some(value) => PathBuf::from(value),
-            None => home_dir().context("cannot determine the home directory")?.join(".nb"),
+            None => home_dir()
+                .context("cannot determine the home directory")?
+                .join(".nb"),
         };
         Self::open(root)
     }
@@ -87,7 +92,10 @@ impl Workspace {
             .filter(|entry| entry.path().is_dir())
             .filter_map(|entry| {
                 let name = entry.file_name().to_string_lossy().into_owned();
-                (!name.starts_with('.')).then(|| Notebook { name, root: entry.path() })
+                (!name.starts_with('.')).then(|| Notebook {
+                    name,
+                    root: entry.path(),
+                })
             })
             .collect();
         notebooks.sort_by(|a, b| a.name.cmp(&b.name));
@@ -95,7 +103,10 @@ impl Workspace {
         if notebooks.is_empty() {
             bail!("no notebooks found under {}", root.display());
         }
-        Ok(Self { root: root.to_path_buf(), notebooks })
+        Ok(Self {
+            root: root.to_path_buf(),
+            notebooks,
+        })
     }
 
     pub fn notebook(&self, name: &str) -> Option<&Notebook> {
@@ -160,14 +171,17 @@ impl Workspace {
     }
 
     pub fn notes(&self, notebook: Option<&str>) -> Result<Vec<Note>> {
-        Ok(self.select(notebook)?.into_iter().flat_map(Notebook::notes).collect())
+        Ok(self
+            .select(notebook)?
+            .into_iter()
+            .flat_map(Notebook::notes)
+            .collect())
     }
 }
 
 fn is_markdown(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| {
-        ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
-    })
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -196,11 +210,14 @@ mod tests {
 
     #[test]
     fn discovers_notebooks_and_skips_hidden_directories() {
-        let root = fixture("discover", &[
-            ("home/knowledge/a.md", "# A"),
-            ("work/b.md", "# B"),
-            (".cache/c.md", "# C"),
-        ]);
+        let root = fixture(
+            "discover",
+            &[
+                ("home/knowledge/a.md", "# A"),
+                ("work/b.md", "# B"),
+                (".cache/c.md", "# C"),
+            ],
+        );
         let ws = Workspace::open(&root).unwrap();
         let names: Vec<&str> = ws.notebooks.iter().map(|nb| nb.name.as_str()).collect();
         assert_eq!(names, vec!["home", "work"]);
@@ -209,15 +226,22 @@ mod tests {
 
     #[test]
     fn walks_markdown_and_ignores_everything_else() {
-        let root = fixture("walk", &[
-            ("home/a.md", "# A"),
-            ("home/nested/b.markdown", "# B"),
-            ("home/notes.txt", "not a note"),
-            ("home/.hidden/c.md", "# hidden"),
-        ]);
+        let root = fixture(
+            "walk",
+            &[
+                ("home/a.md", "# A"),
+                ("home/nested/b.markdown", "# B"),
+                ("home/notes.txt", "not a note"),
+                ("home/.hidden/c.md", "# hidden"),
+            ],
+        );
         let ws = Workspace::open(&root).unwrap();
-        let mut titles: Vec<String> =
-            ws.notes(Some("home")).unwrap().into_iter().map(|n| n.title).collect();
+        let mut titles: Vec<String> = ws
+            .notes(Some("home"))
+            .unwrap()
+            .into_iter()
+            .map(|n| n.title)
+            .collect();
         titles.sort();
         assert_eq!(titles, vec!["A", "B"]);
         std::fs::remove_dir_all(&root).unwrap();

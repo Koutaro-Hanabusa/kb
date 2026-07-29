@@ -45,7 +45,10 @@ impl<W: Write> Ctx<'_, W> {
     }
 
     fn notebook_of(&self, path: &Path) -> Option<&Notebook> {
-        self.workspace.notebooks.iter().find(|nb| path.starts_with(&nb.root))
+        self.workspace
+            .notebooks
+            .iter()
+            .find(|nb| path.starts_with(&nb.root))
     }
 
     fn read_note(&self, path: &Path) -> Result<Note> {
@@ -60,9 +63,7 @@ impl<W: Write> Ctx<'_, W> {
 
 pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
     let (positional_filename, positional_content) = match &args.target {
-        Some(target) if looks_like_path(target) => {
-            (Some(target.clone()), args.content_arg.clone())
-        }
+        Some(target) if looks_like_path(target) => (Some(target.clone()), args.content_arg.clone()),
         Some(target) => (None, Some(target.clone())),
         None => (None, args.content_arg.clone()),
     };
@@ -72,7 +73,11 @@ pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
     let notebook_name = scoped
         .as_ref()
         .and_then(|s| s.notebook.clone())
-        .or_else(|| args.folder.as_deref().and_then(|f| Selector::parse(f).notebook));
+        .or_else(|| {
+            args.folder
+                .as_deref()
+                .and_then(|f| Selector::parse(f).notebook)
+        });
     let notebook = ctx.notebook(notebook_name.as_deref())?;
 
     let folder = match (&args.folder, &scoped) {
@@ -122,8 +127,7 @@ pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
         let password = resolve_password(args.password.as_deref(), true)?;
         let encrypted = kb_core::encrypt::encrypted_path(&path);
         kb_core::encrypt::encrypt(tool, &path, &encrypted, &password)?;
-        std::fs::remove_file(&path)
-            .with_context(|| format!("removing {}", path.display()))?;
+        std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
         encrypted
     } else {
         path
@@ -172,7 +176,9 @@ fn looks_like_path(value: &str) -> bool {
 
 fn read_stdin() -> Result<String> {
     let mut text = String::new();
-    std::io::stdin().read_to_string(&mut text).context("reading standard input")?;
+    std::io::stdin()
+        .read_to_string(&mut text)
+        .context("reading standard input")?;
     Ok(text)
 }
 
@@ -270,12 +276,15 @@ pub fn show<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShowArgs, mode: ViewMode) -> 
                     _ => shell::page(&chosen),
                 };
             }
-            return list(ctx, &ListArgs {
-                selector: Some(input.to_string()),
-                filters: FilterArgs::default(),
-                paths_only: false,
-                json: false,
-            });
+            return list(
+                ctx,
+                &ListArgs {
+                    selector: Some(input.to_string()),
+                    filters: FilterArgs::default(),
+                    paths_only: false,
+                    json: false,
+                },
+            );
         }
     };
 
@@ -374,7 +383,10 @@ fn resolve_password(given: Option<&str>, confirm: bool) -> Result<String> {
 fn temp_path(encrypted: &Path) -> PathBuf {
     let dir = encrypted.parent().unwrap_or(Path::new("."));
     let stem = kb_core::encrypt::decrypted_path(encrypted);
-    let name = stem.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = stem
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     dir.join(format!(".kb-decrypted-{}-{name}", std::process::id()))
 }
 
@@ -423,12 +435,16 @@ fn metadata_field<W: Write>(
         return Ok(Some(id.map(|id| id.to_string()).unwrap_or_default()));
     }
     if args.opts.relative_path {
-        let notebook = ctx.notebook_of(path).context("item is outside the knowledge base")?;
+        let notebook = ctx
+            .notebook_of(path)
+            .context("item is outside the knowledge base")?;
         return Ok(Some(notebook.relative(path).display().to_string()));
     }
     if args.opts.r#type {
         return Ok(Some(
-            path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default(),
+            path.extension()
+                .map(|e| e.to_string_lossy().into_owned())
+                .unwrap_or_default(),
         ));
     }
     if args.opts.title {
@@ -441,9 +457,15 @@ fn metadata_field<W: Write>(
     }
     if args.opts.added || args.opts.updated {
         let note = ctx.read_note(path)?;
-        let stamp = if args.opts.added { note.created } else { note.updated };
+        let stamp = if args.opts.added {
+            note.created
+        } else {
+            note.updated
+        };
         return Ok(Some(
-            stamp.map(|ts| kb_core::note::format_timestamp(&ts)).unwrap_or_default(),
+            stamp
+                .map(|ts| kb_core::note::format_timestamp(&ts))
+                .unwrap_or_default(),
         ));
     }
     Ok(None)
@@ -471,8 +493,8 @@ pub fn edit<W: Write>(ctx: &mut Ctx<'_, W>, args: &EditArgs) -> Result<()> {
         return shell::launch(&editor_for(ctx, args.editor.as_deref()), &path);
     };
 
-    let existing = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let existing =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let updated = if args.overwrite {
         content
     } else if args.prepend {
@@ -480,7 +502,12 @@ pub fn edit<W: Write>(ctx: &mut Ctx<'_, W>, args: &EditArgs) -> Result<()> {
         // before the header that describes it.
         let doc = kb_core::Document::split(&existing);
         match doc.span {
-            Some(span) => format!("{}{}\n{}", &existing[..span.end], content.trim_end(), doc.body),
+            Some(span) => format!(
+                "{}{}\n{}",
+                &existing[..span.end],
+                content.trim_end(),
+                doc.body
+            ),
             None => format!("{}\n{existing}", content.trim_end()),
         }
     } else {
@@ -539,10 +566,16 @@ pub fn move_item<W: Write>(ctx: &mut Ctx<'_, W>, args: &MoveArgs) -> Result<()> 
         items::rename_to_title(&path, &title)?
     } else if args.reset {
         let stamp = kb_core::note::timestamp_stem(&jiff::Zoned::now());
-        let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+        let ext = path
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_default();
         items::rename(&path, &path.with_file_name(format!("{stamp}{ext}")))?
     } else {
-        let destination = args.destination.as_deref().context("no destination given")?;
+        let destination = args
+            .destination
+            .as_deref()
+            .context("no destination given")?;
         items::rename(&path, &destination_path(ctx, destination, &path)?)?
     };
 
@@ -576,7 +609,11 @@ fn destination_path<W: Write>(
         Some(kb_core::Target::Name(name)) => {
             let candidate = dir.join(name);
             // A name that is an existing directory means "move into it".
-            Ok(if candidate.is_dir() { candidate.join(file_name(source)) } else { candidate })
+            Ok(if candidate.is_dir() {
+                candidate.join(file_name(source))
+            } else {
+                candidate
+            })
         }
         Some(kb_core::Target::Id(id)) => Ok(dir.join(id.to_string())),
         None => Ok(dir.join(file_name(source))),
@@ -627,8 +664,16 @@ pub fn notebooks<W: Write>(ctx: &mut Ctx<'_, W>, args: &NotebooksArgs) -> Result
                 git::set_author(&root, author.name.as_deref(), author.email.as_deref())?;
             }
             let (name, email) = git::author(&root);
-            writeln!(ctx.out, "name   {}", name.unwrap_or_else(|| "(unset)".into()))?;
-            writeln!(ctx.out, "email  {}", email.unwrap_or_else(|| "(unset)".into()))?;
+            writeln!(
+                ctx.out,
+                "name   {}",
+                name.unwrap_or_else(|| "(unset)".into())
+            )?;
+            writeln!(
+                ctx.out,
+                "email  {}",
+                email.unwrap_or_else(|| "(unset)".into())
+            )?;
         }
         Some(NotebooksCommand::Init(init)) => {
             let path = match &init.path {
@@ -735,8 +780,10 @@ pub fn notebooks<W: Write>(ctx: &mut Ctx<'_, W>, args: &NotebooksArgs) -> Result
             let root = notebook.root.clone();
             if !delete.force {
                 ctx.out.flush()?;
-                if !shell::confirm(&format!("Delete notebook {} and everything in it?", delete.name))?
-                {
+                if !shell::confirm(&format!(
+                    "Delete notebook {} and everything in it?",
+                    delete.name
+                ))? {
                     writeln!(ctx.out, "Cancelled.")?;
                     return Ok(());
                 }
@@ -800,7 +847,15 @@ pub fn status<W: Write>(ctx: &mut Ctx<'_, W>, args: &NotebookArgs) -> Result<()>
         writeln!(ctx.out, "  path    {}", notebook.root.display())?;
         writeln!(ctx.out, "  branch  {branch}")?;
         writeln!(ctx.out, "  remote  {remote}")?;
-        writeln!(ctx.out, "  status  {}", if dirty { "uncommitted changes" } else { "clean" })?;
+        writeln!(
+            ctx.out,
+            "  status  {}",
+            if dirty {
+                "uncommitted changes"
+            } else {
+                "clean"
+            }
+        )?;
         writeln!(ctx.out, "  items   {}", items::count(&notebook.root)?)?;
     }
     Ok(())
@@ -828,8 +883,9 @@ pub fn history<W: Write>(ctx: &mut Ctx<'_, W>, args: &SelectorArgs) -> Result<()
         None => (ctx.notebook(None)?.root.clone(), None),
     };
 
-    let mut argv: Vec<String> =
-        ["log", "--format=%h %ad %an — %s", "--date=short"].map(String::from).to_vec();
+    let mut argv: Vec<String> = ["log", "--format=%h %ad %an — %s", "--date=short"]
+        .map(String::from)
+        .to_vec();
     if let Some(file) = &file {
         argv.push("--".into());
         argv.push(file.to_string_lossy().into_owned());
@@ -872,8 +928,10 @@ pub fn folders<W: Write>(ctx: &mut Ctx<'_, W>, args: &FoldersArgs) -> Result<()>
             }
             if !folder.force {
                 ctx.out.flush()?;
-                if !shell::confirm(&format!("Delete folder {} and everything in it?", path.display()))?
-                {
+                if !shell::confirm(&format!(
+                    "Delete folder {} and everything in it?",
+                    path.display()
+                ))? {
                     writeln!(ctx.out, "Cancelled.")?;
                     return Ok(());
                 }
@@ -887,9 +945,15 @@ pub fn folders<W: Write>(ctx: &mut Ctx<'_, W>, args: &FoldersArgs) -> Result<()>
                 None => ctx.notebook(None)?.root.clone(),
             };
             let index = Index::load(&dir)?;
-            for path in items::list_dir(&dir)?.into_iter().filter(|path| path.is_dir()) {
+            for path in items::list_dir(&dir)?
+                .into_iter()
+                .filter(|path| path.is_dir())
+            {
                 let name = file_name(&path);
-                let id = index.id_of(&name).map(|id| id.to_string()).unwrap_or_else(|| "-".into());
+                let id = index
+                    .id_of(&name)
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "-".into());
                 writeln!(ctx.out, "[{id}] {name}/")?;
             }
         }
@@ -905,7 +969,8 @@ pub fn sync<W: Write>(ctx: &mut Ctx<'_, W>, args: &SyncArgs) -> Result<()> {
             writeln!(
                 ctx.out,
                 "{}",
-                ctx.style.dim(&format!("{}: not a git repository", notebook.name))
+                ctx.style
+                    .dim(&format!("{}: not a git repository", notebook.name))
             )?;
             continue;
         }
@@ -936,7 +1001,10 @@ pub fn init<W: Write>(workspace_root: &Path, args: &InitArgs, out: &mut W) -> Re
             git::init(&home)?;
         }
     }
-    std::fs::write(workspace_root.join(kb_core::workspace::CURRENT_FILE), "home\n")?;
+    std::fs::write(
+        workspace_root.join(kb_core::workspace::CURRENT_FILE),
+        "home\n",
+    )?;
     writeln!(out, "Initialised {}", home.display())?;
     Ok(())
 }
@@ -944,7 +1012,11 @@ pub fn init<W: Write>(workspace_root: &Path, args: &InitArgs, out: &mut W) -> Re
 pub fn reconcile<W: Write>(ctx: &mut Ctx<'_, W>, args: &NotebookArgs) -> Result<()> {
     for notebook in ctx.workspace.select(args.notebook.as_deref())? {
         let updated = items::reconcile(notebook)?;
-        writeln!(ctx.out, "{}  {updated} index file(s) updated", ctx.style.path(&notebook.name))?;
+        writeln!(
+            ctx.out,
+            "{}  {updated} index file(s) updated",
+            ctx.style.path(&notebook.name)
+        )?;
     }
     Ok(())
 }
@@ -983,7 +1055,12 @@ pub fn tags<W: Write>(ctx: &mut Ctx<'_, W>, filters: &FilterArgs) -> Result<()> 
         }
     }
 
-    let width = counts.keys().map(|t| t.chars().count()).max().unwrap_or(0).max(10);
+    let width = counts
+        .keys()
+        .map(|t| t.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(10);
     let mut rows: Vec<(&String, &usize)> = counts.iter().collect();
     rows.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
 
@@ -991,7 +1068,12 @@ pub fn tags<W: Write>(ctx: &mut Ctx<'_, W>, filters: &FilterArgs) -> Result<()> 
         writeln!(ctx.out, "{tag:<width$}  {count}")?;
     }
     if untagged > 0 {
-        writeln!(ctx.out, "{}", ctx.style.dim(&format!("{:<width$}  {}", "(untagged)", untagged)))?;
+        writeln!(
+            ctx.out,
+            "{}",
+            ctx.style
+                .dim(&format!("{:<width$}  {}", "(untagged)", untagged))
+        )?;
     }
     Ok(())
 }
@@ -1020,7 +1102,8 @@ pub fn migrate_notes<W: Write>(ctx: &mut Ctx<'_, W>, args: &MigrateArgs) -> Resu
         writeln!(
             ctx.out,
             "{}  {}",
-            ctx.style.path(&format!("{}/{}", plan.notebook, plan.rel_path.display())),
+            ctx.style
+                .path(&format!("{}/{}", plan.notebook, plan.rel_path.display())),
             ctx.style.dim(&format!("+ {}", keys.join(", ")))
         )?;
         if args.verbose {
@@ -1031,10 +1114,18 @@ pub fn migrate_notes<W: Write>(ctx: &mut Ctx<'_, W>, args: &MigrateArgs) -> Resu
     }
 
     writeln!(ctx.out)?;
-    writeln!(ctx.out, "{} of {total} notes need frontmatter.", plans.len())?;
+    writeln!(
+        ctx.out,
+        "{} of {total} notes need frontmatter.",
+        plans.len()
+    )?;
 
     if !args.apply {
-        writeln!(ctx.out, "{}", ctx.style.dim("Nothing written — pass --apply to write."))?;
+        writeln!(
+            ctx.out,
+            "{}",
+            ctx.style.dim("Nothing written — pass --apply to write.")
+        )?;
         return Ok(());
     }
     for plan in &plans {
@@ -1110,7 +1201,8 @@ pub fn bookmark<W: Write>(ctx: &mut Ctx<'_, W>, args: &BookmarkArgs) -> Result<(
             no_request: args.opts.no_request,
             save_source: args.opts.save_source,
         };
-        let (path, source) = kb_core::bookmark::create(&notebook, &dir, &spec, &jiff::Zoned::now())?;
+        let (path, source) =
+            kb_core::bookmark::create(&notebook, &dir, &spec, &jiff::Zoned::now())?;
         writeln!(ctx.out, "{}", path.display())?;
         if let Some(source) = source {
             writeln!(ctx.out, "{}", source.display())?;
@@ -1190,15 +1282,24 @@ fn browse_path<W: Write>(ctx: &Ctx<'_, W>, args: &BrowseArgs) -> Result<String> 
             Some(selector) => selector.clone(),
             None => format!("{notebook}:"),
         };
-        return Ok(format!("/{}?{flag}", kb_core::render::url_encode(&selector)));
+        return Ok(format!(
+            "/{}?{flag}",
+            kb_core::render::url_encode(&selector)
+        ));
     }
 
     if let Some(tag) = &args.tag {
         let tag = tag.trim_start_matches('#');
-        return Ok(format!("/{notebook}:?--query={}", kb_core::render::url_encode(&format!("#{tag}"))));
+        return Ok(format!(
+            "/{notebook}:?--query={}",
+            kb_core::render::url_encode(&format!("#{tag}"))
+        ));
     }
     if let Some(query) = &args.query {
-        return Ok(format!("/{notebook}:?--query={}", kb_core::render::url_encode(query)));
+        return Ok(format!(
+            "/{notebook}:?--query={}",
+            kb_core::render::url_encode(query)
+        ));
     }
     match &args.selector {
         Some(selector) => Ok(format!("/{}", kb_core::render::url_encode(selector))),
@@ -1215,8 +1316,7 @@ pub fn todo<W: Write>(ctx: &mut Ctx<'_, W>, args: &TodoArgs) -> Result<()> {
             let parsed = Selector::parse(&folder);
             let notebook = ctx.notebook(parsed.notebook.as_deref())?.clone();
             let dir = notebook.root.join(parsed.folder_path());
-            std::fs::create_dir_all(&dir)
-                .with_context(|| format!("creating {}", dir.display()))?;
+            std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
             let task = add.task.join(" ");
             let now = jiff::Zoned::now();
@@ -1224,8 +1324,11 @@ pub fn todo<W: Write>(ctx: &mut Ctx<'_, W>, args: &TodoArgs) -> Result<()> {
             let path = unique_path(&dir, &stem, kb_core::todo::TODO_EXT);
 
             let stamp = kb_core::note::format_timestamp(&now);
-            let tags =
-                if add.tags.is_empty() { vec!["todo".to_string()] } else { add.tags.clone() };
+            let tags = if add.tags.is_empty() {
+                vec!["todo".to_string()]
+            } else {
+                add.tags.clone()
+            };
             let contents = format!(
                 "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{}",
                 kb_core::frontmatter::yaml_scalar(&task),
@@ -1250,12 +1353,20 @@ pub fn todo<W: Write>(ctx: &mut Ctx<'_, W>, args: &TodoArgs) -> Result<()> {
         Some(TodoCommand::List(list)) => list_todos(
             ctx,
             &list.filters,
-            if list.all { TodoFilter::All } else { TodoFilter::Open },
+            if list.all {
+                TodoFilter::All
+            } else {
+                TodoFilter::Open
+            },
         ),
         None => list_todos(
             ctx,
             &args.filters,
-            if args.all { TodoFilter::All } else { TodoFilter::Open },
+            if args.all {
+                TodoFilter::All
+            } else {
+                TodoFilter::Open
+            },
         ),
     }
 }
@@ -1273,7 +1384,10 @@ fn list_todos<W: Write>(
 ) -> Result<()> {
     let notes = search::filter_notes(ctx.workspace, &to_query(filters)?)?;
 
-    for note in notes.iter().filter(|note| kb_core::todo::is_todo(&note.path)) {
+    for note in notes
+        .iter()
+        .filter(|note| kb_core::todo::is_todo(&note.path))
+    {
         let raw = std::fs::read_to_string(&note.path)?;
         let done = kb_core::todo::is_done(&raw);
         let keep = match which {
@@ -1286,7 +1400,9 @@ fn list_todos<W: Write>(
         }
         let task = kb_core::todo::task_of(&raw).unwrap_or_else(|| note.title.clone());
         let mark = if done { "[x]" } else { "[ ]" };
-        let id = item_id(&note.path).map(|id| id.to_string()).unwrap_or_else(|| "-".into());
+        let id = item_id(&note.path)
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "-".into());
         writeln!(ctx.out, "[{id}] {mark} {task}")?;
     }
     Ok(())
@@ -1295,13 +1411,12 @@ fn list_todos<W: Write>(
 fn set_todo<W: Write>(ctx: &mut Ctx<'_, W>, target: &SelectorArgs, done: bool) -> Result<()> {
     let input = target.selector.as_deref().context("no todo given")?;
     let path = ctx.resolve_note(input)?;
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
 
     let updated = kb_core::todo::set_done(&raw, done)
         .with_context(|| format!("{} has no checkbox to change", path.display()))?;
-    std::fs::write(&path, &updated)
-        .with_context(|| format!("writing {}", path.display()))?;
+    std::fs::write(&path, &updated).with_context(|| format!("writing {}", path.display()))?;
 
     let task = kb_core::todo::task_of(&updated).unwrap_or_default();
     writeln!(ctx.out, "[{}] {task}", if done { "x" } else { " " })?;
@@ -1319,15 +1434,16 @@ pub fn pin<W: Write>(ctx: &mut Ctx<'_, W>, target: &SelectorArgs, pinned: bool) 
     } else {
         kb_core::todo::unpin(dir, &name)?;
     }
-    writeln!(ctx.out, "{} {}", if pinned { "Pinned" } else { "Unpinned" }, path.display())?;
+    writeln!(
+        ctx.out,
+        "{} {}",
+        if pinned { "Pinned" } else { "Unpinned" },
+        path.display()
+    )?;
     Ok(())
 }
 
-pub fn archive<W: Write>(
-    ctx: &mut Ctx<'_, W>,
-    args: &NotebookArgs,
-    archived: bool,
-) -> Result<()> {
+pub fn archive<W: Write>(ctx: &mut Ctx<'_, W>, args: &NotebookArgs, archived: bool) -> Result<()> {
     let notebook = ctx.notebook(args.notebook.as_deref())?.clone();
     if archived {
         kb_core::todo::archive(&notebook.root)?;
@@ -1372,7 +1488,12 @@ pub fn plugins<W: Write>(ctx: &mut Ctx<'_, W>, args: &PluginsArgs) -> Result<()>
             } else {
                 kb_core::plugins::install(&root, Path::new(&install.source), install.force)?
             };
-            writeln!(ctx.out, "Installed {} → {}", plugin.name, plugin.path.display())?;
+            writeln!(
+                ctx.out,
+                "Installed {} → {}",
+                plugin.name,
+                plugin.path.display()
+            )?;
         }
         Some(PluginsCommand::Uninstall(uninstall)) => {
             if !uninstall.force {
@@ -1407,7 +1528,6 @@ pub fn plugins<W: Write>(ctx: &mut Ctx<'_, W>, args: &PluginsArgs) -> Result<()>
 // ─────────────────────────── settings ───────────────────────────
 
 pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<()> {
-
     let mut settings = kb_core::settings::Settings::load()?;
 
     match &args.command {
@@ -1445,11 +1565,7 @@ pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<(
                     let colour: u8 = number
                         .parse()
                         .with_context(|| format!("`{number}` is not a colour number"))?;
-                    writeln!(
-                        ctx.out,
-                        "{}{colour}\u{1b}[0m",
-                        theme::foreground(colour)
-                    )?;
+                    writeln!(ctx.out, "{}{colour}\u{1b}[0m", theme::foreground(colour))?;
                 }
                 None => write!(ctx.out, "{}", theme::palette())?,
             }
@@ -1483,7 +1599,6 @@ pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<(
 }
 
 pub fn set_setting<W: Write>(ctx: &mut Ctx<'_, W>, args: &SetArgs) -> Result<()> {
-
     let mut settings = kb_core::settings::Settings::load()?;
     let name = kb_core::settings::resolve_name(&args.name)?;
 
@@ -1502,7 +1617,6 @@ pub fn set_setting<W: Write>(ctx: &mut Ctx<'_, W>, args: &SetArgs) -> Result<()>
 }
 
 pub fn unset_setting<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingNameArgs) -> Result<()> {
-
     let mut settings = kb_core::settings::Settings::load()?;
     let name = kb_core::settings::resolve_name(&args.name)?;
     settings.unset(&name)?;
@@ -1613,7 +1727,12 @@ pub fn interactive_shell<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShellArgs) -> Re
     let root = ctx.notebook(args.notebook.as_deref())?.root.clone();
     let shell_program = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
 
-    writeln!(ctx.out, "{}", ctx.style.dim(&format!("{} — type `exit` to leave", root.display())))?;
+    writeln!(
+        ctx.out,
+        "{}",
+        ctx.style
+            .dim(&format!("{} — type `exit` to leave", root.display()))
+    )?;
     ctx.out.flush()?;
 
     std::process::Command::new(&shell_program)
@@ -1628,14 +1747,17 @@ pub fn interactive_shell<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShellArgs) -> Re
 pub fn import<W: Write>(ctx: &mut Ctx<'_, W>, args: &ImportArgs) -> Result<()> {
     match &args.command {
         Some(ImportCommand::Notebook(notebook)) => {
-            return notebooks(ctx, &NotebooksArgs {
-                command: Some(NotebooksCommand::Import(NotebookImportArgs {
-                    path: notebook.path.clone(),
-                    name: notebook.name.clone(),
-                })),
-                names: false,
-                paths: false,
-            });
+            return notebooks(
+                ctx,
+                &NotebooksArgs {
+                    command: Some(NotebooksCommand::Import(NotebookImportArgs {
+                        path: notebook.path.clone(),
+                        name: notebook.name.clone(),
+                    })),
+                    names: false,
+                    paths: false,
+                },
+            );
         }
         Some(ImportCommand::Bookmarks(paths)) => {
             return import_bookmarks(ctx, &paths.paths, &paths.opts);
@@ -1712,7 +1834,8 @@ fn convert_in_place<W: Write>(ctx: &mut Ctx<'_, W>, path: &Path) -> Result<PathB
         writeln!(
             ctx.out,
             "{}",
-            ctx.style.dim("pandoc not found — imported without converting")
+            ctx.style
+                .dim("pandoc not found — imported without converting")
         )?;
         return Ok(path.to_path_buf());
     }
@@ -1742,13 +1865,14 @@ fn import_bookmarks<W: Write>(
     opts: &ImportOpts,
 ) -> Result<()> {
     let target = opts.to.as_deref().unwrap_or_default();
-    let notebook = ctx.notebook(Selector::parse(target).notebook.as_deref())?.clone();
+    let notebook = ctx
+        .notebook(Selector::parse(target).notebook.as_deref())?
+        .clone();
     let dir = folder_path_of(target).to_string_lossy().into_owned();
 
     let mut imported = 0usize;
     for source in sources {
-        let html = std::fs::read_to_string(source)
-            .with_context(|| format!("reading {source}"))?;
+        let html = std::fs::read_to_string(source).with_context(|| format!("reading {source}"))?;
 
         for entry in kb_core::convert::parse_bookmarks(&html) {
             let spec = kb_core::bookmark::NewBookmark {
@@ -1770,23 +1894,27 @@ fn import_bookmarks<W: Write>(
 fn import_destination<W: Write>(ctx: &Ctx<'_, W>, opts: &ImportOpts) -> Result<PathBuf> {
     let parsed = Selector::parse(opts.to.as_deref().unwrap_or_default());
     let notebook = ctx.notebook(parsed.notebook.as_deref())?;
-    let dir = notebook.root.join(folder_path_of(opts.to.as_deref().unwrap_or_default()));
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("creating {}", dir.display()))?;
+    let dir = notebook
+        .root
+        .join(folder_path_of(opts.to.as_deref().unwrap_or_default()));
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     Ok(dir)
 }
 
 pub fn export<W: Write>(ctx: &mut Ctx<'_, W>, args: &ExportArgs) -> Result<()> {
     match &args.command {
         Some(ExportCommand::Notebook(notebook)) => {
-            return notebooks(ctx, &NotebooksArgs {
-                command: Some(NotebooksCommand::Export(NotebookExportArgs {
-                    name: notebook.name.clone(),
-                    path: notebook.path.clone(),
-                })),
-                names: false,
-                paths: false,
-            });
+            return notebooks(
+                ctx,
+                &NotebooksArgs {
+                    command: Some(NotebooksCommand::Export(NotebookExportArgs {
+                        name: notebook.name.clone(),
+                        path: notebook.path.clone(),
+                    })),
+                    names: false,
+                    paths: false,
+                },
+            );
         }
         Some(ExportCommand::Pandoc(pandoc)) => {
             let source = ctx.resolve(&pandoc.selector)?.path().to_path_buf();
@@ -1821,15 +1949,17 @@ pub fn export<W: Write>(ctx: &mut Ctx<'_, W>, args: &ExportArgs) -> Result<()> {
 
     // A different extension on the destination means "convert to that format",
     // which is what pandoc is for.
-    let converting = destination.extension() != source.extension()
-        && !args.pandoc_args.is_empty()
+    let converting = destination.extension() != source.extension() && !args.pandoc_args.is_empty()
         || (destination.extension() != source.extension()
             && kb_core::convert::have_pandoc()
             && destination.extension().is_some());
 
     if converting {
         let mut pandoc_args = args.pandoc_args.clone();
-        if !pandoc_args.iter().any(|arg| arg == "-o" || arg == "--output") {
+        if !pandoc_args
+            .iter()
+            .any(|arg| arg == "-o" || arg == "--output")
+        {
             pandoc_args.push("--output".into());
             pandoc_args.push(destination.display().to_string());
         }
@@ -1882,7 +2012,11 @@ pub fn env<W: Write>(ctx: &mut Ctx<'_, W>, args: &EnvArgs) -> Result<()> {
         writeln!(ctx.out, "config    {}", settings.path().display())?;
         writeln!(ctx.out, "editor    {}", editor_for(ctx, None))?;
         for tool in ["git", "fzf", "glow", "bat", "pandoc", "gpg", "openssl"] {
-            let found = if shell::has_command(tool) { "yes" } else { "no" };
+            let found = if shell::has_command(tool) {
+                "yes"
+            } else {
+                "no"
+            };
             writeln!(ctx.out, "{tool:<9} {found}")?;
         }
         for (name, value) in settings.entries() {
@@ -1900,15 +2034,19 @@ pub fn completions<W: Write>(ctx: &mut Ctx<'_, W>, args: &CompletionsArgs) -> Re
     use clap_complete::Shell;
 
     let (command, shell_arg, dir) = match &args.command {
-        Some(CompletionsCommand::Install(install)) => ("install", install.shell, install.dir.clone()),
-        Some(CompletionsCommand::Uninstall(remove)) => ("uninstall", remove.shell, remove.dir.clone()),
+        Some(CompletionsCommand::Install(install)) => {
+            ("install", install.shell, install.dir.clone())
+        }
+        Some(CompletionsCommand::Uninstall(remove)) => {
+            ("uninstall", remove.shell, remove.dir.clone())
+        }
         Some(CompletionsCommand::Check(check)) => ("check", check.shell, check.dir.clone()),
         None => ("print", args.shell, None),
     };
 
-    let shell = shell_arg.or_else(current_shell).context(
-        "cannot tell which shell to use; name one, e.g. `kb completions install zsh`",
-    )?;
+    let shell = shell_arg
+        .or_else(current_shell)
+        .context("cannot tell which shell to use; name one, e.g. `kb completions install zsh`")?;
 
     if command == "print" {
         clap_complete::generate(shell, &mut Cli::command(), "kb", &mut ctx.out);
@@ -1923,7 +2061,11 @@ pub fn completions<W: Write>(ctx: &mut Ctx<'_, W>, args: &CompletionsArgs) -> Re
 
     match command {
         "check" => {
-            let state = if path.exists() { "installed" } else { "not installed" };
+            let state = if path.exists() {
+                "installed"
+            } else {
+                "not installed"
+            };
             writeln!(ctx.out, "{state}: {}", path.display())?;
         }
         "uninstall" => {
@@ -1936,18 +2078,17 @@ pub fn completions<W: Write>(ctx: &mut Ctx<'_, W>, args: &CompletionsArgs) -> Re
             }
         }
         _ => {
-            std::fs::create_dir_all(&dir)
-                .with_context(|| format!("creating {}", dir.display()))?;
+            std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
             let mut buffer: Vec<u8> = Vec::new();
             clap_complete::generate(shell, &mut Cli::command(), "kb", &mut buffer);
-            std::fs::write(&path, buffer)
-                .with_context(|| format!("writing {}", path.display()))?;
+            std::fs::write(&path, buffer).with_context(|| format!("writing {}", path.display()))?;
             writeln!(ctx.out, "Installed {}", path.display())?;
             if matches!(shell, Shell::Zsh) {
                 writeln!(
                     ctx.out,
                     "{}",
-                    ctx.style.dim(&format!("Ensure {} is on $fpath.", dir.display()))
+                    ctx.style
+                        .dim(&format!("Ensure {} is on $fpath.", dir.display()))
                 )?;
             }
         }
@@ -1957,7 +2098,10 @@ pub fn completions<W: Write>(ctx: &mut Ctx<'_, W>, args: &CompletionsArgs) -> Re
 
 fn current_shell() -> Option<clap_complete::Shell> {
     let shell = std::env::var("SHELL").ok()?;
-    let name = Path::new(&shell).file_name()?.to_string_lossy().into_owned();
+    let name = Path::new(&shell)
+        .file_name()?
+        .to_string_lossy()
+        .into_owned();
     name.parse().ok()
 }
 
@@ -1998,8 +2142,8 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     std::fs::create_dir_all(destination)
         .with_context(|| format!("creating {}", destination.display()))?;
 
-    for entry in std::fs::read_dir(source)
-        .with_context(|| format!("reading {}", source.display()))?
+    for entry in
+        std::fs::read_dir(source).with_context(|| format!("reading {}", source.display()))?
     {
         let entry = entry?;
         let target = destination.join(entry.file_name());
@@ -2019,8 +2163,14 @@ fn unique_beside(path: &Path) -> PathBuf {
         return path.to_path_buf();
     }
     let dir = path.parent().unwrap_or(Path::new("."));
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
     (2u32..)
         .map(|n| dir.join(format!("{stem}-{n}{ext}")))
         .find(|candidate| !candidate.exists())
@@ -2040,7 +2190,9 @@ fn to_query(filters: &FilterArgs) -> Result<Query> {
 }
 
 fn file_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

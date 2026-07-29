@@ -41,7 +41,8 @@ impl Tool {
 }
 
 pub fn is_encrypted(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case(ENCRYPTED_EXT))
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(ENCRYPTED_EXT))
 }
 
 /// The encrypted counterpart of a path: `note.md` → `note.md.enc`.
@@ -90,7 +91,11 @@ pub fn encrypt(tool: Tool, source: &Path, destination: &Path, password: &str) ->
 
     run_with_password(tool, &args, password)?;
     if !destination.exists() {
-        bail!("{} did not produce {}", tool.program(), destination.display());
+        bail!(
+            "{} did not produce {}",
+            tool.program(),
+            destination.display()
+        );
     }
     Ok(())
 }
@@ -163,7 +168,9 @@ fn run_with_password(tool: Tool, args: &[String], password: &str) -> Result<()> 
         .write_all(format!("{password}\n").as_bytes())
         .context("passing the password")?;
 
-    let status = child.wait().with_context(|| format!("waiting for {}", tool.program()))?;
+    let status = child
+        .wait()
+        .with_context(|| format!("waiting for {}", tool.program()))?;
     if !status.success() {
         bail!("{} exited with {status}", tool.program());
     }

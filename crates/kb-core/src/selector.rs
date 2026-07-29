@@ -56,12 +56,23 @@ impl Selector {
         };
 
         let trailing_slash = rest.ends_with('/');
-        let mut parts: Vec<String> =
-            rest.split('/').filter(|part| !part.is_empty()).map(str::to_string).collect();
+        let mut parts: Vec<String> = rest
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .map(str::to_string)
+            .collect();
 
-        let target = if trailing_slash { None } else { parts.pop().map(Self::classify) };
+        let target = if trailing_slash {
+            None
+        } else {
+            parts.pop().map(Self::classify)
+        };
 
-        Self { notebook, folder: parts, target }
+        Self {
+            notebook,
+            folder: parts,
+            target,
+        }
     }
 
     fn classify(part: String) -> Target {
@@ -125,7 +136,10 @@ pub fn resolve(workspace: &Workspace, selector: &Selector) -> Result<Resolved> {
     }
 
     let Some(target) = &selector.target else {
-        return Ok(Resolved::Folder { path: dir, id: None });
+        return Ok(Resolved::Folder {
+            path: dir,
+            id: None,
+        });
     };
 
     let index = Index::load(&dir)?;
@@ -170,7 +184,9 @@ fn find_by_name(dir: &Path, notebook: &Notebook, needle: &str) -> Option<String>
     }
     // Filename without its extension.
     if let Some(hit) = entries.iter().find(|name| {
-        Path::new(name).file_stem().is_some_and(|stem| stem.to_string_lossy() == needle)
+        Path::new(name)
+            .file_stem()
+            .is_some_and(|stem| stem.to_string_lossy() == needle)
     }) {
         return Some(hit.clone());
     }
@@ -182,14 +198,21 @@ fn find_by_name(dir: &Path, notebook: &Notebook, needle: &str) -> Option<String>
             let path = dir.join(name);
             let raw = std::fs::read_to_string(&path).ok()?;
             let rel = path.strip_prefix(&notebook.root).unwrap_or(&path);
-            Some((name.clone(), Note::parse(&raw, &path, &notebook.name, rel).title))
+            Some((
+                name.clone(),
+                Note::parse(&raw, &path, &notebook.name, rel).title,
+            ))
         })
         .collect();
 
     titled
         .iter()
         .find(|(_, title)| title == needle)
-        .or_else(|| titled.iter().find(|(_, title)| title.eq_ignore_ascii_case(needle)))
+        .or_else(|| {
+            titled
+                .iter()
+                .find(|(_, title)| title.eq_ignore_ascii_case(needle))
+        })
         .map(|(name, _)| name.clone())
 }
 
@@ -277,7 +300,10 @@ mod tests {
 
     #[test]
     fn a_title_with_spaces_survives_parsing() {
-        assert_eq!(sel("My Note Title").target, Some(Target::Name("My Note Title".into())));
+        assert_eq!(
+            sel("My Note Title").target,
+            Some(Target::Name("My Note Title".into()))
+        );
     }
 
     #[test]
