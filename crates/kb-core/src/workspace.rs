@@ -16,6 +16,9 @@ pub const NOTEBOOK_ENV: &str = "KB_NOTEBOOK";
 /// Marker file in the home directory that identifies a work machine.
 const WORK_MARKER: &str = ".is_work_pc";
 
+/// File at the knowledge base root naming the selected notebook.
+pub const CURRENT_FILE: &str = ".current";
+
 /// A single notebook — one directory of Markdown, normally one git repository.
 #[derive(Debug, Clone)]
 pub struct Notebook {
@@ -119,11 +122,11 @@ impl Workspace {
         }
     }
 
-    /// Where a new note goes when no notebook is named.
+    /// The notebook commands act on when none is named.
     ///
-    /// Work and personal notes live in separate repositories, and putting one in
-    /// the other is a mistake that is tedious to undo — so the machine decides,
-    /// via a marker file in the home directory.
+    /// `$KB_NOTEBOOK` wins, then the notebook `kb use` selected, then the
+    /// machine's own default — work and personal notes live in separate
+    /// repositories, and putting one in the other is tedious to undo.
     pub fn default_notebook(&self) -> Result<&Notebook> {
         if let Some(name) = std::env::var_os(NOTEBOOK_ENV) {
             let name = name.to_string_lossy().into_owned();
@@ -131,10 +134,29 @@ impl Workspace {
                 .notebook(&name)
                 .with_context(|| format!("${NOTEBOOK_ENV} names an unknown notebook `{name}`"));
         }
+        if let Some(selected) = self.current().and_then(|name| self.notebook(&name)) {
+            return Ok(selected);
+        }
         let preferred = if is_work_machine() { "work" } else { "home" };
         self.notebook(preferred)
             .or_else(|| self.notebooks.first())
             .context("no notebooks available")
+    }
+
+    /// The notebook name recorded by `kb use`, if it still exists.
+    pub fn current(&self) -> Option<String> {
+        let raw = std::fs::read_to_string(self.root.join(CURRENT_FILE)).ok()?;
+        let name = raw.trim().to_string();
+        (!name.is_empty()).then_some(name)
+    }
+
+    /// Record `name` as the selected notebook.
+    pub fn set_current(&self, name: &str) -> Result<()> {
+        self.notebook(name)
+            .with_context(|| format!("unknown notebook `{name}`"))?;
+        let path = self.root.join(CURRENT_FILE);
+        std::fs::write(&path, format!("{name}\n"))
+            .with_context(|| format!("writing {}", path.display()))
     }
 
     pub fn notes(&self, notebook: Option<&str>) -> Result<Vec<Note>> {
@@ -207,6 +229,32 @@ mod tests {
         let ws = Workspace::open(&root).unwrap();
         assert!(ws.select(Some("nope")).is_err());
         assert_eq!(ws.select(None).unwrap().len(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn use_selects_the_default_notebook() {
+        let root = fixture("current", &[("home/a.md", "# A"), ("work/b.md", "# B")]);
+        let ws = Workspace::open(&root).unwrap();
+
+        // Written by `nb use`; kb reads the same file.
+        std::fs::write(root.join(CURRENT_FILE), "work\n").unwrap();
+        assert_eq!(ws.current().as_deref(), Some("work"));
+        assert_eq!(ws.default_notebook().unwrap().name, "work");
+
+        ws.set_current("home").unwrap();
+        assert_eq!(ws.default_notebook().unwrap().name, "home");
+        assert!(ws.set_current("nope").is_err());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_stale_current_falls_through_to_the_machine_default() {
+        let root = fixture("stale", &[("home/a.md", "# A")]);
+        std::fs::write(root.join(CURRENT_FILE), "deleted-notebook\n").unwrap();
+        let ws = Workspace::open(&root).unwrap();
+        assert_eq!(ws.default_notebook().unwrap().name, "home");
         std::fs::remove_dir_all(&root).unwrap();
     }
 

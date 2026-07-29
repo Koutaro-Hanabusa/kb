@@ -6,23 +6,34 @@ use anyhow::{Context, Result};
 use jiff::Zoned;
 
 use crate::frontmatter::{yaml_scalar, yaml_tags};
-use crate::note::{format_timestamp, slugify};
+use crate::note::{Note, filename_stem, format_timestamp, timestamp_stem};
 use crate::workspace::Notebook;
 
 /// What to create.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NewNote {
-    pub title: String,
+    /// Title of the note. Without one, the filename is a timestamp and no
+    /// heading is written — matching `nb add <content>`.
+    pub title: Option<String>,
     /// Directory within the notebook, e.g. `knowledge`.
     pub dir: String,
     pub tags: Vec<String>,
-    /// Body text. `None` writes a heading and nothing else.
+    /// Body text. `None` writes just the heading, if there is a title.
     pub body: Option<String>,
+    /// Explicit filename, overriding the one derived from the title.
+    pub filename: Option<String>,
+    /// File extension for the new note.
+    pub extension: Option<String>,
 }
 
 impl NewNote {
     pub fn new(title: impl Into<String>, dir: impl Into<String>) -> Self {
-        Self { title: title.into(), dir: dir.into(), tags: Vec::new(), body: None }
+        Self { title: Some(title.into()), dir: dir.into(), ..Default::default() }
+    }
+
+    /// A note with content but no title, as `nb add "some content"` creates.
+    pub fn untitled(dir: impl Into<String>) -> Self {
+        Self { dir: dir.into(), ..Default::default() }
     }
 
     /// Tags to write: the ones given, or the directory name as a default so new
@@ -47,17 +58,28 @@ pub fn create(notebook: &Notebook, spec: &NewNote, now: &Zoned) -> Result<PathBu
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("creating {}", dir.display()))?;
 
-    let path = available_path(&dir, &slugify(&spec.title));
+    let path = available_path(&dir, &stem(spec, now), spec.extension.as_deref());
     let stamp = format_timestamp(now);
+
     // A supplied body is written as-is; it may already open with its own
-    // heading, and second-guessing that would mangle piped-in content.
-    let body = match spec.body.as_deref().map(str::trim) {
-        Some(text) if !text.is_empty() => format!("{text}\n"),
-        _ => format!("# {}\n", spec.title),
+    // heading, and second-guessing that would mangle piped-in content. Without
+    // one, a titled note gets its heading and an untitled note stays empty.
+    let body = match (spec.body.as_deref().map(str::trim), &spec.title) {
+        (Some(text), _) if !text.is_empty() => format!("{text}\n"),
+        (_, Some(title)) => format!("# {title}\n"),
+        (_, None) => String::new(),
     };
+
+    let title = match &spec.title {
+        Some(title) => title.clone(),
+        // Untitled notes still get a frontmatter title so listings have
+        // something to show; derive it the same way reading a note would.
+        None => derived_title(&body, &path),
+    };
+
     let contents = format!(
         "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{body}",
-        yaml_scalar(&spec.title),
+        yaml_scalar(&title),
         yaml_tags(&spec.effective_tags()),
     );
     std::fs::write(&path, contents)
@@ -65,14 +87,33 @@ pub fn create(notebook: &Notebook, spec: &NewNote, now: &Zoned) -> Result<PathBu
     Ok(path)
 }
 
-/// The first free `<stem>.md`, `<stem>-2.md`, … in `dir`.
-fn available_path(dir: &Path, stem: &str) -> PathBuf {
-    let first = dir.join(format!("{stem}.md"));
+/// The filename stem: an explicit filename, else the title, else a timestamp.
+fn stem(spec: &NewNote, now: &Zoned) -> String {
+    if let Some(filename) = &spec.filename {
+        return Path::new(filename)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| filename.clone());
+    }
+    match spec.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        Some(title) => filename_stem(title),
+        None => timestamp_stem(now),
+    }
+}
+
+fn derived_title(body: &str, path: &Path) -> String {
+    Note::parse(body, path, "", path).title
+}
+
+/// The first free `<stem>.<ext>`, `<stem>-2.<ext>`, … in `dir`.
+fn available_path(dir: &Path, stem: &str, extension: Option<&str>) -> PathBuf {
+    let ext = extension.map(|e| e.trim_start_matches('.')).unwrap_or("md");
+    let first = dir.join(format!("{stem}.{ext}"));
     if !first.exists() {
         return first;
     }
     (2u32..)
-        .map(|n| dir.join(format!("{stem}-{n}.md")))
+        .map(|n| dir.join(format!("{stem}-{n}.{ext}")))
         .find(|candidate| !candidate.exists())
         .expect("an unused filename exists")
 }
@@ -96,7 +137,7 @@ mod tests {
         let now = Zoned::now();
         let path = create(&nb, &spec, &now).unwrap();
 
-        assert_eq!(path, nb.root.join("knowledge/cloudflare-で-rag-を構築する.md"));
+        assert_eq!(path, nb.root.join("knowledge/cloudflare_で_rag_を構築する.md"));
         let note = nb.read(&path).unwrap();
         assert_eq!(note.title, "Cloudflare で RAG を構築する");
         assert_eq!(note.tags, vec!["knowledge"]);
@@ -113,7 +154,7 @@ mod tests {
         let first = create(&nb, &spec, &now).unwrap();
         let second = create(&nb, &spec, &now).unwrap();
         assert_ne!(first, second);
-        assert!(second.to_string_lossy().ends_with("same-title-2.md"));
+        assert!(second.to_string_lossy().ends_with("same_title-2.md"));
         assert!(first.exists());
         std::fs::remove_dir_all(&nb.root).unwrap();
     }
@@ -142,6 +183,44 @@ mod tests {
         let spec = NewNote { body: Some("   \n".into()), ..NewNote::new("見出しだけ", "knowledge") };
         let path = create(&nb, &spec, &Zoned::now()).unwrap();
         assert!(std::fs::read_to_string(&path).unwrap().ends_with("# 見出しだけ\n"));
+        std::fs::remove_dir_all(&nb.root).unwrap();
+    }
+
+    /// `nb add "content"` — no title, so the filename is the timestamp and no
+    /// heading is invented.
+    #[test]
+    fn an_untitled_note_is_named_for_the_time() {
+        let nb = notebook("untitled");
+        let now = crate::note::parse_timestamp("2026-07-29T12:57:42+09:00").unwrap();
+        let spec = NewNote { body: Some("content only".into()), ..NewNote::untitled("knowledge") };
+        let path = create(&nb, &spec, &now).unwrap();
+
+        assert_eq!(path, nb.root.join("knowledge/20260729125742.md"));
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.ends_with("content only\n"));
+        assert!(!raw.contains("# "));
+        // The listing still needs something to show, taken from the body.
+        assert_eq!(nb.read(&path).unwrap().title, "content only");
+        std::fs::remove_dir_all(&nb.root).unwrap();
+    }
+
+    #[test]
+    fn an_explicit_filename_wins_over_the_title() {
+        let nb = notebook("explicit");
+        let spec =
+            NewNote { filename: Some("chosen.md".into()), ..NewNote::new("Ignored", "knowledge") };
+        let path = create(&nb, &spec, &Zoned::now()).unwrap();
+        assert_eq!(path, nb.root.join("knowledge/chosen.md"));
+        assert_eq!(nb.read(&path).unwrap().title, "Ignored");
+        std::fs::remove_dir_all(&nb.root).unwrap();
+    }
+
+    #[test]
+    fn a_type_sets_the_extension() {
+        let nb = notebook("ext");
+        let spec = NewNote { extension: Some("org".into()), ..NewNote::new("Notes", "knowledge") };
+        let path = create(&nb, &spec, &Zoned::now()).unwrap();
+        assert_eq!(path, nb.root.join("knowledge/notes.org"));
         std::fs::remove_dir_all(&nb.root).unwrap();
     }
 

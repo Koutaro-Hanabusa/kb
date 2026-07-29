@@ -9,6 +9,7 @@ pub mod create;
 pub mod frontmatter;
 pub mod git;
 pub mod index;
+pub mod items;
 pub mod migrate;
 pub mod note;
 pub mod search;

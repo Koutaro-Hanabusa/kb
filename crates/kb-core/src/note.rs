@@ -212,35 +212,28 @@ pub fn timestamp_from_filename(path: &Path) -> Option<Zoned> {
     dt.to_zoned(TimeZone::system()).ok()
 }
 
-/// Turn a title into a filename stem.
+/// Turn a title into a filename stem, the way `nb` does.
 ///
-/// Non-ASCII text is kept as-is — plenty of existing notes are titled in
-/// Japanese, and transliterating would make them harder to recognise, not
-/// easier.
-pub fn slugify(title: &str) -> String {
-    let mut out = String::with_capacity(title.len());
-    let mut pending_dash = false;
-    for ch in title.chars() {
-        let mapped = match ch {
-            c if c.is_ascii_alphanumeric() => Some(c.to_ascii_lowercase()),
-            '-' | '_' => Some('-'),
-            c if c.is_whitespace() || matches!(c, '/' | '\\' | ':' | '.' | ',') => None,
-            c if c.is_ascii_punctuation() => None,
-            c => Some(c),
-        };
-        match mapped {
-            Some(c) => {
-                if pending_dash && !out.is_empty() {
-                    out.push('-');
-                }
-                pending_dash = false;
-                out.push(c);
-            }
-            None => pending_dash = !out.is_empty(),
-        }
-    }
-    let slug = out.trim_matches('-').to_string();
-    if slug.is_empty() { "untitled".to_string() } else { slug }
+/// Lowercase ASCII letters, replace whitespace and the characters a filesystem
+/// objects to, and leave everything else — punctuation and non-ASCII alike —
+/// untouched. Verified against `nb` itself; the existing note
+/// `日本語uiライティング_-_句点のルール.md` is exactly this transformation of
+/// "日本語UIライティング - 句点のルール".
+pub fn filename_stem(title: &str) -> String {
+    title
+        .trim()
+        .chars()
+        .map(|c| match c {
+            c if c.is_whitespace() => '_',
+            '/' | '\\' | ':' | '?' | '*' | '"' | '<' | '>' | '|' => '_',
+            c => c.to_ascii_lowercase(),
+        })
+        .collect()
+}
+
+/// The timestamp filename `nb` gives a note with no title.
+pub fn timestamp_stem(now: &Zoned) -> String {
+    now.strftime("%Y%m%d%H%M%S").to_string()
 }
 
 #[cfg(test)]
@@ -361,12 +354,34 @@ mod tests {
         assert!(parse_timestamp("").is_none());
     }
 
+    /// Every expectation here was produced by running `nb add -t <title>` and
+    /// reading back the filename it chose.
     #[test]
-    fn slugifies_titles() {
-        assert_eq!(slugify("Hello World"), "hello-world");
-        assert_eq!(slugify("nb: 遅い理由"), "nb-遅い理由");
-        assert_eq!(slugify("Cloudflare で RAG を構築する"), "cloudflare-で-rag-を構築する");
-        assert_eq!(slugify("  spaced  out  "), "spaced-out");
-        assert_eq!(slugify("!!!"), "untitled");
+    fn filenames_match_what_nb_produces() {
+        assert_eq!(filename_stem("UPPER lower - dash_under.dot"), "upper_lower_-_dash_under.dot");
+        assert_eq!(
+            filename_stem("symbols: ! @ # / \\ ? * & (paren) [br] 100%"),
+            "symbols__!_@_#_________&_(paren)_[br]_100%"
+        );
+        assert_eq!(filename_stem("  leading and trailing  "), "leading_and_trailing");
+        assert_eq!(
+            filename_stem("日本語UIライティング - 句点のルール"),
+            "日本語uiライティング_-_句点のルール"
+        );
+        assert_eq!(filename_stem("multi   space"), "multi___space");
+    }
+
+    #[test]
+    fn filenames_neutralise_the_rest_of_the_reserved_set() {
+        // `nb` was verified for : / \ ? * — the remaining Windows-reserved
+        // characters are treated the same rather than left to break a checkout.
+        assert_eq!(filename_stem("a\"b<c>d|e"), "a_b_c_d_e");
+        assert_eq!(filename_stem("tabs\tand\nnewlines"), "tabs_and_newlines");
+    }
+
+    #[test]
+    fn an_untitled_note_is_stamped_with_the_time() {
+        let now = parse_timestamp("2026-07-29T12:57:42+09:00").unwrap();
+        assert_eq!(timestamp_stem(&now), "20260729125742");
     }
 }

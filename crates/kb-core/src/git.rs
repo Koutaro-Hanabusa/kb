@@ -126,6 +126,44 @@ pub fn push(repo: &Path) -> Result<String> {
     run(repo, &["push"])
 }
 
+pub fn init(repo: &Path) -> Result<()> {
+    run(repo, &["init", "-q"]).map(|_| ())
+}
+
+pub fn clone(url: &str, into: &Path, branch: Option<&str>) -> Result<()> {
+    let mut args: Vec<String> = vec!["clone".into(), url.into(), into.display().to_string()];
+    if let Some(branch) = branch {
+        args.push("--branch".into());
+        args.push(branch.into());
+    }
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    // Clone runs before the directory exists, so it cannot use `git -C`.
+    let output = Command::new("git")
+        .args(&argv)
+        .output()
+        .context("running `git clone`")?;
+    if !output.status.success() {
+        bail!("git clone failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+    }
+    Ok(())
+}
+
+pub fn current_branch(repo: &Path) -> Result<String> {
+    Ok(run(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string())
+}
+
+pub fn remote_url(repo: &Path) -> Result<String> {
+    Ok(run(repo, &["remote", "get-url", "origin"])?.trim().to_string())
+}
+
+/// Run an arbitrary git command, returning stdout.
+///
+/// This backs `kb git`, which is a deliberate passthrough — whatever git accepts
+/// is what it accepts.
+pub fn run_raw(repo: &Path, args: &[&str]) -> Result<String> {
+    run(repo, args)
+}
+
 /// Run a git command in `repo`, returning stdout.
 fn run(repo: &Path, args: &[&str]) -> Result<String> {
     let output = Command::new("git")
