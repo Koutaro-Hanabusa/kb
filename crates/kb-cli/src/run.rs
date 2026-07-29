@@ -860,6 +860,159 @@ fn bookmark_path<W: Write>(ctx: &Ctx<'_, W>, target: &SelectorArgs) -> Result<Pa
     ctx.resolve_note(input)
 }
 
+// ─────────────────────────── todo / pin / archive ───────────────────────────
+
+pub fn todo<W: Write>(ctx: &mut Ctx<'_, W>, args: &TodoArgs) -> Result<()> {
+    match &args.command {
+        Some(TodoCommand::Add(add)) => {
+            let folder = add.folder.clone().unwrap_or_default();
+            let parsed = Selector::parse(&folder);
+            let notebook = ctx.notebook(parsed.notebook.as_deref())?.clone();
+            let dir = notebook.root.join(parsed.folder_path());
+            std::fs::create_dir_all(&dir)
+                .with_context(|| format!("creating {}", dir.display()))?;
+
+            let task = add.task.join(" ");
+            let now = jiff::Zoned::now();
+            let stem = kb_core::note::timestamp_stem(&now);
+            let path = unique_path(&dir, &stem, kb_core::todo::TODO_EXT);
+
+            let stamp = kb_core::note::format_timestamp(&now);
+            let tags =
+                if add.tags.is_empty() { vec!["todo".to_string()] } else { add.tags.clone() };
+            let contents = format!(
+                "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{}",
+                kb_core::frontmatter::yaml_scalar(&task),
+                kb_core::frontmatter::yaml_tags(&tags),
+                kb_core::todo::render(&task, &add.tags),
+            );
+            std::fs::write(&path, contents)
+                .with_context(|| format!("writing {}", path.display()))?;
+
+            let mut index = Index::load(&dir)?;
+            index.add(&file_name(&path));
+            index.save(&dir)?;
+
+            writeln!(ctx.out, "{}", path.display())?;
+            Ok(())
+        }
+        Some(TodoCommand::Do(target)) => set_todo(ctx, target, true),
+        Some(TodoCommand::Undo(target)) => set_todo(ctx, target, false),
+        Some(TodoCommand::Done(filters)) => list_todos(ctx, filters, TodoFilter::Done),
+        Some(TodoCommand::Open(filters)) => list_todos(ctx, filters, TodoFilter::Open),
+        Some(TodoCommand::List(list)) => list_todos(
+            ctx,
+            &list.filters,
+            if list.all { TodoFilter::All } else { TodoFilter::Open },
+        ),
+        None => list_todos(
+            ctx,
+            &args.filters,
+            if args.all { TodoFilter::All } else { TodoFilter::Open },
+        ),
+    }
+}
+
+enum TodoFilter {
+    Open,
+    Done,
+    All,
+}
+
+fn list_todos<W: Write>(
+    ctx: &mut Ctx<'_, W>,
+    filters: &FilterArgs,
+    which: TodoFilter,
+) -> Result<()> {
+    let notes = search::filter_notes(ctx.workspace, &to_query(filters)?)?;
+
+    for note in notes.iter().filter(|note| kb_core::todo::is_todo(&note.path)) {
+        let raw = std::fs::read_to_string(&note.path)?;
+        let done = kb_core::todo::is_done(&raw);
+        let keep = match which {
+            TodoFilter::Open => !done,
+            TodoFilter::Done => done,
+            TodoFilter::All => true,
+        };
+        if !keep {
+            continue;
+        }
+        let task = kb_core::todo::task_of(&raw).unwrap_or_else(|| note.title.clone());
+        let mark = if done { "[x]" } else { "[ ]" };
+        let id = item_id(&note.path).map(|id| id.to_string()).unwrap_or_else(|| "-".into());
+        writeln!(ctx.out, "[{id}] {mark} {task}")?;
+    }
+    Ok(())
+}
+
+fn set_todo<W: Write>(ctx: &mut Ctx<'_, W>, target: &SelectorArgs, done: bool) -> Result<()> {
+    let input = target.selector.as_deref().context("no todo given")?;
+    let path = ctx.resolve_note(input)?;
+    let raw = std::fs::read_to_string(&path)
+        .with_context(|| format!("reading {}", path.display()))?;
+
+    let updated = kb_core::todo::set_done(&raw, done)
+        .with_context(|| format!("{} has no checkbox to change", path.display()))?;
+    std::fs::write(&path, &updated)
+        .with_context(|| format!("writing {}", path.display()))?;
+
+    let task = kb_core::todo::task_of(&updated).unwrap_or_default();
+    writeln!(ctx.out, "[{}] {task}", if done { "x" } else { " " })?;
+    Ok(())
+}
+
+pub fn pin<W: Write>(ctx: &mut Ctx<'_, W>, target: &SelectorArgs, pinned: bool) -> Result<()> {
+    let input = target.selector.as_deref().context("no item given")?;
+    let path = ctx.resolve(input)?.path().to_path_buf();
+    let dir = path.parent().context("item has no parent directory")?;
+    let name = file_name(&path);
+
+    if pinned {
+        kb_core::todo::pin(dir, &name)?;
+    } else {
+        kb_core::todo::unpin(dir, &name)?;
+    }
+    writeln!(ctx.out, "{} {}", if pinned { "Pinned" } else { "Unpinned" }, path.display())?;
+    Ok(())
+}
+
+pub fn archive<W: Write>(
+    ctx: &mut Ctx<'_, W>,
+    args: &NotebookArgs,
+    archived: bool,
+) -> Result<()> {
+    let notebook = ctx.notebook(args.notebook.as_deref())?.clone();
+    if archived {
+        kb_core::todo::archive(&notebook.root)?;
+    } else {
+        kb_core::todo::unarchive(&notebook.root)?;
+    }
+    writeln!(
+        ctx.out,
+        "{} {}",
+        notebook.name,
+        if archived { "archived" } else { "unarchived" }
+    )?;
+    Ok(())
+}
+
+/// The index id of an item, if its directory has one.
+fn item_id(path: &Path) -> Option<usize> {
+    let dir = path.parent()?;
+    Index::load(dir).ok()?.id_of(&file_name(path))
+}
+
+fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+    let first = dir.join(format!("{stem}.{ext}"));
+    if !first.exists() {
+        return first;
+    }
+    (2u32..)
+        .map(|n| dir.join(format!("{stem}-{n}.{ext}")))
+        .find(|candidate| !candidate.exists())
+        .expect("an unused filename exists")
+}
+
 // ─────────────────────────── helpers ───────────────────────────
 
 fn to_query(filters: &FilterArgs) -> Result<Query> {

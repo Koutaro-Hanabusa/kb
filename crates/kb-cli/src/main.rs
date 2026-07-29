@@ -66,6 +66,13 @@ fn main() -> Result<()> {
         Some(Command::Tags(args)) => run::tags(&mut ctx, args)?,
         Some(Command::Migrate(args)) => run::migrate_notes(&mut ctx, args)?,
         Some(Command::Bookmark(args)) => run::bookmark(&mut ctx, args)?,
+        Some(Command::Todo(args)) => run::todo(&mut ctx, args)?,
+        Some(Command::Do(args)) => run::todo(&mut ctx, &todo_shortcut(args, true))?,
+        Some(Command::Undo(args)) => run::todo(&mut ctx, &todo_shortcut(args, false))?,
+        Some(Command::Pin(args)) => run::pin(&mut ctx, args, true)?,
+        Some(Command::Unpin(args)) => run::pin(&mut ctx, args, false)?,
+        Some(Command::Archive(args)) => run::archive(&mut ctx, args, true)?,
+        Some(Command::Unarchive(args)) => run::archive(&mut ctx, args, false)?,
         Some(Command::Init(_)) | Some(Command::Pick(_)) => unreachable!("handled above"),
 
         // No subcommand: a selector shows that item, and nothing lists the
@@ -87,6 +94,20 @@ fn main() -> Result<()> {
 
     out.flush()?;
     Ok(())
+}
+
+/// `kb do <id>` is shorthand for `kb todo do <id>`.
+fn todo_shortcut(args: &commands::SelectorArgs, done: bool) -> commands::TodoArgs {
+    let target = commands::SelectorArgs { selector: args.selector.clone() };
+    commands::TodoArgs {
+        command: Some(if done {
+            commands::TodoCommand::Do(target)
+        } else {
+            commands::TodoCommand::Undo(target)
+        }),
+        filters: FilterArgs::default(),
+        all: false,
+    }
 }
 
 fn workspace_root(cli: &Cli) -> std::path::PathBuf {

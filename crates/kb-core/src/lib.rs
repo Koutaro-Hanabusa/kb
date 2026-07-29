@@ -16,6 +16,7 @@ pub mod note;
 pub mod search;
 pub mod selector;
 pub mod sync;
+pub mod todo;
 pub mod workspace;
 
 pub use create::NewNote;

@@ -116,6 +116,82 @@ pub enum Command {
     /// Bookmark a URL, or list bookmarks
     #[command(visible_alias = "bm")]
     Bookmark(BookmarkArgs),
+
+    /// Manage todos
+    #[command(visible_aliases = ["todos", "tasks"])]
+    Todo(TodoArgs),
+
+    /// Mark a todo done
+    Do(SelectorArgs),
+
+    /// Mark a todo not done
+    Undo(SelectorArgs),
+
+    /// Pin an item to the top of listings
+    Pin(SelectorArgs),
+
+    /// Remove an item's pin
+    Unpin(SelectorArgs),
+
+    /// Archive a notebook
+    Archive(NotebookArgs),
+
+    /// Remove a notebook's archived mark
+    Unarchive(NotebookArgs),
+}
+
+#[derive(Args)]
+pub struct TodoArgs {
+    #[command(subcommand)]
+    pub command: Option<TodoCommand>,
+
+    #[command(flatten)]
+    pub filters: FilterArgs,
+
+    /// Show done todos as well
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Subcommand)]
+pub enum TodoCommand {
+    /// Add a todo
+    Add(TodoAddArgs),
+    /// List open todos
+    List(TodoListArgs),
+    /// Mark a todo done
+    Do(SelectorArgs),
+    /// Mark a todo not done
+    Undo(SelectorArgs),
+    /// List done todos
+    Done(FilterArgs),
+    /// List open todos
+    Open(FilterArgs),
+}
+
+#[derive(Args)]
+pub struct TodoAddArgs {
+    /// The task
+    #[arg(value_name = "TASK", required = true, num_args = 1..)]
+    pub task: Vec<String>,
+
+    /// A comma-separated list of tags
+    #[arg(long, value_name = "TAGS", value_delimiter = ',')]
+    pub tags: Vec<String>,
+
+    /// Add within the folder at this path
+    #[arg(long, value_name = "FOLDER")]
+    pub folder: Option<String>,
+}
+
+#[derive(Args)]
+pub struct TodoListArgs {
+    #[command(flatten)]
+    pub filters: FilterArgs,
+
+    /// Show done todos as well
+    #[arg(long)]
+    pub all: bool,
 }
 
 #[derive(Args)]
