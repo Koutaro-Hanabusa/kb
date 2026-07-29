@@ -244,11 +244,15 @@ pub fn show<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShowArgs, mode: ViewMode) -> 
         // for a file browser to do — except this one previews the notes.
         Resolved::Folder { path, .. } | Resolved::Notebook { root: path, .. } => {
             if mode.browses_folders() && !args.opts.print {
-                if let Some(chosen) = pick_within(ctx, path)? {
-                    ctx.out.flush()?;
-                    return shell::page(&chosen);
-                }
-                return Ok(());
+                let Some(chosen) = pick_within(ctx, path)? else {
+                    return Ok(()); // the picker was dismissed
+                };
+                ctx.out.flush()?;
+                return match mode {
+                    // `open` means open it to work on; `peek` means just look.
+                    ViewMode::Open => shell::launch(&editor_for(ctx, None), &chosen),
+                    _ => shell::page(&chosen),
+                };
             }
             return list(ctx, &ListArgs {
                 selector: Some(input.to_string()),
@@ -1449,6 +1453,9 @@ pub fn env<W: Write>(ctx: &mut Ctx<'_, W>, args: &EnvArgs) -> Result<()> {
     writeln!(ctx.out, "kb        {}", env!("CARGO_PKG_VERSION"))?;
     writeln!(ctx.out, "root      {}", ctx.workspace.root.display())?;
     writeln!(ctx.out, "notebook  {notebook}")?;
+    // AGPL asks that users be able to find the source; say where it is.
+    writeln!(ctx.out, "licence   AGPL-3.0-or-later")?;
+    writeln!(ctx.out, "source    {}", env!("CARGO_PKG_REPOSITORY"))?;
 
     if args.long {
         let settings = kb_core::settings::Settings::load()?;

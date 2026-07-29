@@ -180,3 +180,19 @@ Both the CLI and the `browse` web application are thin shells over `kb-core`.
 cargo build --release   # target/release/kb
 cargo test
 ```
+
+## Licence and attribution
+
+`kb` is licensed under the **GNU Affero General Public License v3.0 or later**
+(see [LICENSE](LICENSE)).
+
+It reimplements the command surface of [`nb`](https://github.com/xwmx/nb) by
+William Melody, which is itself AGPLv3. No `nb` code was copied — `kb` is
+written from scratch in Rust — but it deliberately reproduces `nb`'s commands,
+identifiers, and on-disk formats so the two interoperate, and one detail (the
+exact OpenSSL invocation used for encrypted notes, needed to decrypt existing
+`.enc` files) was taken from reading `nb`'s source. `kb` is therefore licensed
+under the same terms as the work it is compatible with.
+
+Thanks to William Melody for `nb`, which this replaces only because 787 notes
+made its startup cost impossible to ignore.
