@@ -52,8 +52,11 @@ pub fn sync(
     // committing now would sweep it in. Stop rather than publish a change the
     // caller never asked for.
     if !include_everything {
-        let foreign: Vec<&str> =
-            staged.iter().filter(|c| !is_markdown(&c.path)).map(|c| c.path.as_str()).collect();
+        let foreign: Vec<&str> = staged
+            .iter()
+            .filter(|c| !is_markdown(&c.path))
+            .map(|c| c.path.as_str())
+            .collect();
         if !foreign.is_empty() {
             bail!(
                 "{} has non-Markdown changes already staged ({}); commit or unstage them, or pass --all",
@@ -64,7 +67,9 @@ pub fn sync(
     }
 
     if !staged.is_empty() {
-        let text = message.map(str::to_string).unwrap_or_else(|| describe(&staged));
+        let text = message
+            .map(str::to_string)
+            .unwrap_or_else(|| describe(&staged));
         git::commit(repo, &text)?;
         outcome.committed = staged.iter().map(|c| c.path.clone()).collect();
         outcome.message = Some(text);
@@ -81,7 +86,11 @@ pub fn sync(
 
 /// Summarise staged changes for a commit subject.
 fn describe(staged: &[StagedChange]) -> String {
-    let verb = if staged.iter().all(StagedChange::is_addition) { "Add" } else { "Update" };
+    let verb = if staged.iter().all(StagedChange::is_addition) {
+        "Add"
+    } else {
+        "Update"
+    };
     match staged {
         [only] => format!("{verb} {}", only.path),
         many => format!("{verb} {} notes", many.len()),
@@ -93,13 +102,22 @@ mod tests {
     use super::*;
 
     fn change(status: char, path: &str) -> StagedChange {
-        StagedChange { status, path: path.to_string() }
+        StagedChange {
+            status,
+            path: path.to_string(),
+        }
     }
 
     #[test]
     fn names_a_single_file() {
-        assert_eq!(describe(&[change('A', "knowledge/a.md")]), "Add knowledge/a.md");
-        assert_eq!(describe(&[change('M', "knowledge/a.md")]), "Update knowledge/a.md");
+        assert_eq!(
+            describe(&[change('A', "knowledge/a.md")]),
+            "Add knowledge/a.md"
+        );
+        assert_eq!(
+            describe(&[change('M', "knowledge/a.md")]),
+            "Update knowledge/a.md"
+        );
     }
 
     #[test]

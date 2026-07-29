@@ -54,8 +54,7 @@ impl Index {
 
     pub fn save(&self, dir: &Path) -> Result<()> {
         let path = dir.join(INDEX_FILE);
-        std::fs::write(&path, self.render())
-            .with_context(|| format!("writing {}", path.display()))
+        std::fs::write(&path, self.render()).with_context(|| format!("writing {}", path.display()))
     }
 
     /// The entry name for `id`, if that id is live.

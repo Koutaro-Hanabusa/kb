@@ -60,11 +60,18 @@ pub fn browse_directory(dir: &Path) -> Result<()> {
 
 /// Open a URL in the browser.
 pub fn open_url(url: &str) -> Result<()> {
-    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
     if !has_command(opener) {
         bail!("no way to open {url}: {opener} is not on PATH");
     }
-    let status = Command::new(opener).arg(url).status().with_context(|| format!("running {opener}"))?;
+    let status = Command::new(opener)
+        .arg(url)
+        .status()
+        .with_context(|| format!("running {opener}"))?;
     if !status.success() {
         bail!("{opener} exited with {status}");
     }
@@ -73,7 +80,11 @@ pub fn open_url(url: &str) -> Result<()> {
 
 /// Hand a file to the system's preferred application.
 pub fn open_externally(path: &Path) -> Result<()> {
-    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
     if !has_command(opener) {
         // Without a desktop opener, showing the file beats doing nothing.
         return page(path);
@@ -92,7 +103,10 @@ pub fn launch(program: &str, path: &Path) -> Result<()> {
 /// carry on — by this point the file exists and its path has been printed.
 pub fn launch_with_args(program: &str, args: &[&str], path: &Path) -> Result<()> {
     if !has_terminal() {
-        eprintln!("kb: no terminal, not opening {program} — the file is at {}", path.display());
+        eprintln!(
+            "kb: no terminal, not opening {program} — the file is at {}",
+            path.display()
+        );
         return Ok(());
     }
 
@@ -154,7 +168,10 @@ pub fn confirm(question: &str) -> Result<bool> {
 
     let mut answer = String::new();
     std::io::stdin().lock().read_line(&mut answer)?;
-    Ok(matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+    Ok(matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
 }
 
 /// Offer notes to fzf and return the chosen path.
@@ -174,7 +191,11 @@ pub fn pick(notes: &[Note], query: Option<&str>) -> Result<Option<PathBuf>> {
         ));
     }
 
-    let preview = if has_command("glow") { "glow -s dark {1}" } else { "cat {1}" };
+    let preview = if has_command("glow") {
+        "glow -s dark {1}"
+    } else {
+        "cat {1}"
+    };
     let mut command = Command::new("fzf");
     command.args([
         "--delimiter",
@@ -195,24 +216,30 @@ pub fn pick(notes: &[Note], query: Option<&str>) -> Result<Option<PathBuf>> {
         .stdout(Stdio::piped())
         .spawn()
         .context("starting fzf")?;
-    child.stdin.take().context("fzf stdin")?.write_all(input.as_bytes())?;
+    child
+        .stdin
+        .take()
+        .context("fzf stdin")?
+        .write_all(input.as_bytes())?;
     let output = child.wait_with_output().context("running fzf")?;
 
     if !output.status.success() {
         return Ok(None); // dismissed with Esc or Ctrl-C
     }
     let selection = String::from_utf8_lossy(&output.stdout);
-    Ok(selection.split('\t').next().filter(|s| !s.trim().is_empty()).map(PathBuf::from))
+    Ok(selection
+        .split('\t')
+        .next()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from))
 }
 
 pub fn has_command(name: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|paths| {
-        std::env::split_paths(&paths).any(|dir| dir.join(name).is_file())
-    })
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
 }
 
 fn is_markdown(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| {
-        ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
-    })
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
 }

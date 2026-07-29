@@ -18,7 +18,10 @@ pub struct LinkBase {
 
 impl LinkBase {
     pub fn new(prefix: impl Into<String>, notebook: impl Into<String>) -> Self {
-        Self { prefix: prefix.into(), notebook: notebook.into() }
+        Self {
+            prefix: prefix.into(),
+            notebook: notebook.into(),
+        }
     }
 
     fn item_url(&self, selector: &str) -> String {
@@ -31,7 +34,12 @@ impl LinkBase {
     }
 
     fn tag_url(&self, tag: &str) -> String {
-        format!("{}/{}:?--query={}", self.prefix, self.notebook, url_encode(&format!("#{tag}")))
+        format!(
+            "{}/{}:?--query={}",
+            self.prefix,
+            self.notebook,
+            url_encode(&format!("#{tag}"))
+        )
     }
 }
 
@@ -115,21 +123,19 @@ fn linkify_text(text: &str, base: &LinkBase) -> String {
 
     while i < bytes.len() {
         // [[selector]]
-        if bytes[i] == '[' && bytes.get(i + 1) == Some(&'[') {
-            if let Some(end) = find_close(&bytes, i + 2) {
-                let selector: String = bytes[i + 2..end].iter().collect();
-                let trimmed = selector.trim();
-                if !trimmed.is_empty() {
-                    // The visible text keeps its brackets, as `nb` renders it —
-                    // which means escaping them so they are not read as link
-                    // syntax themselves.
-                    out.push_str(&format!(
-                        r"[\[\[{trimmed}\]\]]({})",
-                        base.item_url(trimmed)
-                    ));
-                    i = end + 2;
-                    continue;
-                }
+        if bytes[i] == '['
+            && bytes.get(i + 1) == Some(&'[')
+            && let Some(end) = find_close(&bytes, i + 2)
+        {
+            let selector: String = bytes[i + 2..end].iter().collect();
+            let trimmed = selector.trim();
+            if !trimmed.is_empty() {
+                // The visible text keeps its brackets, as `nb` renders it —
+                // which means escaping them so they are not read as link
+                // syntax themselves.
+                out.push_str(&format!(r"[\[\[{trimmed}\]\]]({})", base.item_url(trimmed)));
+                i = end + 2;
+                continue;
             }
         }
         // #tag, but not a Markdown heading and not part of a word.
@@ -155,8 +161,7 @@ fn linkify_text(text: &str, base: &LinkBase) -> String {
 }
 
 fn find_close(chars: &[char], from: usize) -> Option<usize> {
-    (from..chars.len().saturating_sub(1))
-        .find(|&i| chars[i] == ']' && chars[i + 1] == ']')
+    (from..chars.len().saturating_sub(1)).find(|&i| chars[i] == ']' && chars[i + 1] == ']')
 }
 
 fn is_tag_start(c: char) -> bool {
@@ -188,18 +193,16 @@ pub fn url_decode(value: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         match bytes[i] {
-            b'%' if i + 2 < bytes.len() => {
-                match u8::from_str_radix(&value[i + 1..i + 3], 16) {
-                    Ok(byte) => {
-                        out.push(byte);
-                        i += 3;
-                    }
-                    Err(_) => {
-                        out.push(bytes[i]);
-                        i += 1;
-                    }
+            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(&value[i + 1..i + 3], 16) {
+                Ok(byte) => {
+                    out.push(byte);
+                    i += 3;
                 }
-            }
+                Err(_) => {
+                    out.push(bytes[i]);
+                    i += 1;
+                }
+            },
             b'+' => {
                 out.push(b' ');
                 i += 1;
@@ -240,7 +243,10 @@ mod tests {
     #[test]
     fn a_scoped_wiki_link_keeps_its_notebook() {
         let html = to_html("[[work:knowledge/3]]", &base());
-        assert!(html.contains("href=\"//localhost:6789/work:knowledge/3\""), "{html}");
+        assert!(
+            html.contains("href=\"//localhost:6789/work:knowledge/3\""),
+            "{html}"
+        );
     }
 
     #[test]
@@ -296,7 +302,10 @@ mod tests {
 
     #[test]
     fn escapes_html() {
-        assert_eq!(escape("<a href=\"x\">&</a>"), "&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;");
+        assert_eq!(
+            escape("<a href=\"x\">&</a>"),
+            "&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;"
+        );
     }
 
     #[test]

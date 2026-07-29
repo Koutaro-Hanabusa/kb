@@ -31,17 +31,27 @@ impl Style {
 
     #[cfg(test)]
     pub fn plain() -> Self {
-        Self { enabled: false, theme: kb_core::theme::DEFAULT }
+        Self {
+            enabled: false,
+            theme: kb_core::theme::DEFAULT,
+        }
     }
 
     /// Styling with colour forced on, for tests that have no terminal.
     #[cfg(test)]
     pub fn themed(theme: kb_core::theme::Theme) -> Self {
-        Self { enabled: true, theme }
+        Self {
+            enabled: true,
+            theme,
+        }
     }
 
     fn wrap(&self, code: &str, text: &str) -> String {
-        if self.enabled { format!("\u{1b}[{code}m{text}\u{1b}[0m") } else { text.to_string() }
+        if self.enabled {
+            format!("\u{1b}[{code}m{text}\u{1b}[0m")
+        } else {
+            text.to_string()
+        }
     }
 
     fn coloured(&self, colour: u8, text: &str) -> String {
@@ -73,7 +83,9 @@ pub fn qualified_path(note: &Note) -> String {
 }
 
 pub fn date(note: &Note) -> String {
-    note.sort_key().map(|ts| ts.strftime("%Y-%m-%d").to_string()).unwrap_or_else(|| "─".repeat(10))
+    note.sort_key()
+        .map(|ts| ts.strftime("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "─".repeat(10))
 }
 
 /// Render search results in the style of a grep tool: a header per file, then
@@ -85,7 +97,14 @@ pub fn render_hits(hits: &[Hit], style: Style) -> String {
             out.push('\n');
         }
         out.push_str(&style.path(&qualified_path(&hit.note)));
-        if hit.note.title != hit.note.rel_path.file_stem().unwrap_or_default().to_string_lossy() {
+        if hit.note.title
+            != hit
+                .note
+                .rel_path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+        {
             out.push_str(&style.dim(" — "));
             out.push_str(&style.title(&hit.note.title));
         }
@@ -175,7 +194,10 @@ mod tests {
 
     #[test]
     fn qualifies_paths_with_the_notebook() {
-        assert_eq!(qualified_path(&note("T", "knowledge/a.md")), "home/knowledge/a.md");
+        assert_eq!(
+            qualified_path(&note("T", "knowledge/a.md")),
+            "home/knowledge/a.md"
+        );
     }
 
     #[test]
@@ -202,7 +224,10 @@ mod tests {
     fn reports_matches_beyond_the_shown_ones() {
         let hit = Hit {
             note: note("T", "a.md"),
-            matches: vec![kb_core::MatchLine { line: 1, text: "x".into() }],
+            matches: vec![kb_core::MatchLine {
+                line: 1,
+                text: "x".into(),
+            }],
             match_count: 4,
             title_match: false,
         };

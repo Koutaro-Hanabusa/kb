@@ -15,9 +15,8 @@ pub fn have_pandoc() -> bool {
 }
 
 fn which(program: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|paths| {
-        std::env::split_paths(&paths).any(|dir| dir.join(program).is_file())
-    })
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
 }
 
 /// Run pandoc over `source`, returning what it wrote to standard output.
@@ -32,7 +31,10 @@ pub fn pandoc(source: &Path, args: &[String]) -> Result<String> {
         .context("running pandoc")?;
 
     if !output.status.success() {
-        bail!("pandoc failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+        bail!(
+            "pandoc failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
@@ -74,15 +76,21 @@ pub fn parse_bookmarks(html: &str) -> Vec<ImportedBookmark> {
 
     while let Some(offset) = lower[cursor..].find("<a ") {
         let start = cursor + offset;
-        let Some(tag_end) = lower[start..].find('>').map(|i| start + i) else { break };
+        let Some(tag_end) = lower[start..].find('>').map(|i| start + i) else {
+            break;
+        };
         let tag = &html[start..tag_end];
         cursor = tag_end + 1;
 
-        let Some(url) = attribute(tag, "href") else { continue };
+        let Some(url) = attribute(tag, "href") else {
+            continue;
+        };
         if !url.contains("://") {
             continue; // skip javascript: and place: entries
         }
-        let Some(close) = lower[cursor..].find("</a>").map(|i| cursor + i) else { continue };
+        let Some(close) = lower[cursor..].find("</a>").map(|i| cursor + i) else {
+            continue;
+        };
         let title = strip_tags(&html[cursor..close]);
 
         found.push(ImportedBookmark {

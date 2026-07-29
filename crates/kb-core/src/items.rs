@@ -18,8 +18,7 @@ pub fn delete(path: &Path) -> Result<()> {
     let name = file_name(path)?;
 
     if path.is_dir() {
-        std::fs::remove_dir_all(path)
-            .with_context(|| format!("removing {}", path.display()))?;
+        std::fs::remove_dir_all(path).with_context(|| format!("removing {}", path.display()))?;
     } else {
         std::fs::remove_file(path).with_context(|| format!("removing {}", path.display()))?;
     }
@@ -46,8 +45,7 @@ pub fn rename(from: &Path, to: &Path) -> Result<PathBuf> {
     if to.exists() {
         bail!("already exists: {}", to.display());
     }
-    std::fs::create_dir_all(to_dir)
-        .with_context(|| format!("creating {}", to_dir.display()))?;
+    std::fs::create_dir_all(to_dir).with_context(|| format!("creating {}", to_dir.display()))?;
     std::fs::rename(from, &to)
         .with_context(|| format!("moving {} to {}", from.display(), to.display()))?;
 
@@ -71,11 +69,14 @@ pub fn rename(from: &Path, to: &Path) -> Result<PathBuf> {
 /// Copy an item, giving the copy its own id.
 pub fn copy(from: &Path, to: &Path) -> Result<PathBuf> {
     let destination = resolve_destination(from, to)?;
-    let to = if destination.exists() { available_beside(&destination) } else { destination };
+    let to = if destination.exists() {
+        available_beside(&destination)
+    } else {
+        destination
+    };
     let to_dir = parent_of(&to)?;
 
-    std::fs::create_dir_all(to_dir)
-        .with_context(|| format!("creating {}", to_dir.display()))?;
+    std::fs::create_dir_all(to_dir).with_context(|| format!("creating {}", to_dir.display()))?;
     std::fs::copy(from, &to)
         .with_context(|| format!("copying {} to {}", from.display(), to.display()))?;
 
@@ -102,8 +103,7 @@ pub fn create_folder(parent: &Path, name: &str) -> Result<PathBuf> {
     if path.exists() {
         bail!("already exists: {}", path.display());
     }
-    std::fs::create_dir_all(&path)
-        .with_context(|| format!("creating {}", path.display()))?;
+    std::fs::create_dir_all(&path).with_context(|| format!("creating {}", path.display()))?;
 
     let mut index = Index::load(parent)?;
     index.add(name);
@@ -142,8 +142,14 @@ fn resolve_destination(from: &Path, to: &Path) -> Result<PathBuf> {
 /// `name.md` → `name-2.md`, and so on.
 fn available_beside(path: &Path) -> PathBuf {
     let dir = path.parent().unwrap_or(Path::new("."));
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
     (2u32..)
         .map(|n| dir.join(format!("{stem}-{n}{ext}")))
         .find(|candidate| !candidate.exists())
@@ -151,7 +157,8 @@ fn available_beside(path: &Path) -> PathBuf {
 }
 
 fn parent_of(path: &Path) -> Result<&Path> {
-    path.parent().with_context(|| format!("{} has no parent directory", path.display()))
+    path.parent()
+        .with_context(|| format!("{} has no parent directory", path.display()))
 }
 
 fn file_name(path: &Path) -> Result<String> {
@@ -291,10 +298,16 @@ mod tests {
         let dir = fixture("totitle");
         write(&dir, "20260108203523.md", "x");
 
-        let moved = rename_to_title(&dir.join("20260108203523.md"), "日本語UIライティング - 句点のルール")
-            .unwrap();
+        let moved = rename_to_title(
+            &dir.join("20260108203523.md"),
+            "日本語UIライティング - 句点のルール",
+        )
+        .unwrap();
 
-        assert_eq!(moved.file_name().unwrap(), "日本語uiライティング_-_句点のルール.md");
+        assert_eq!(
+            moved.file_name().unwrap(),
+            "日本語uiライティング_-_句点のルール.md"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
