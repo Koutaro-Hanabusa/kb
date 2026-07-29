@@ -52,6 +52,18 @@ cargo test
 `fzf`、`glow`、`bat`、`openssl`、`gpg` は利用できる場合にだけ使われ、なくても動きます。
 検出結果は `kb env --long` で確認できます。
 
+## リリース
+
+[`tagpr`](https://github.com/Songmu/tagpr) が `master` への変更に対するリリース PR を
+維持します。その PR をマージすると `Cargo.toml` のバージョン更新、`v<version>` タグ、
+GitHub Release の作成まで行います。crates.io への公開はしません。Nix パッケージも同じ
+`Cargo.toml` のバージョンを読むため、メタデータは自動で同期します。
+
+マージする PR に `minor` または `major` ラベルを付けると、その SemVer 更新を指定できます。
+ラベルがなければ tagpr はパッチ版を提案します。ワークフローがリリース PR を作成できるように、
+**Settings → Actions → General → Workflow permissions** で **Allow GitHub Actions to create
+and approve pull requests** を有効にしてください。
+
 ### 初回利用
 
 既存の `nb` ナレッジベースを指定すれば、レイアウトも ID もそのまま使えます。
