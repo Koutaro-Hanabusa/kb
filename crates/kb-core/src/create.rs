@@ -66,13 +66,16 @@ pub fn create(notebook: &Notebook, spec: &NewNote, now: &Zoned) -> Result<PathBu
     };
     let stamp = format_timestamp(now);
 
-    // A supplied body is written as-is; it may already open with its own
-    // heading, and second-guessing that would mangle piped-in content. Without
-    // one, a titled note gets its heading and an untitled note stays empty.
-    let body = match (spec.body.as_deref().map(str::trim), &spec.title) {
-        (Some(text), _) if !text.is_empty() => format!("{text}\n"),
-        (_, Some(title)) => format!("# {title}\n"),
-        (_, None) => String::new(),
+    // A title becomes a heading above the content, the way `nb add -t … -c …`
+    // writes it — including when the content carries a heading of its own.
+    // Without a title the content stands alone, and without either the note is
+    // empty for an editor to fill.
+    let content = spec.body.as_deref().map(str::trim).filter(|text| !text.is_empty());
+    let body = match (&spec.title, content) {
+        (Some(title), Some(text)) => format!("# {title}\n\n{text}\n"),
+        (Some(title), None) => format!("# {title}\n"),
+        (None, Some(text)) => format!("{text}\n"),
+        (None, None) => String::new(),
     };
 
     let title = match &spec.title {
@@ -173,21 +176,33 @@ mod tests {
         std::fs::remove_dir_all(&nb.root).unwrap();
     }
 
+    /// `nb add -t "Title Here" -c "body text"` writes
+    /// `# Title Here\n\nbody text\n` — the heading goes above the content even
+    /// when the content has a heading of its own.
     #[test]
-    fn writes_a_supplied_body_verbatim() {
+    fn a_title_becomes_a_heading_above_the_content() {
         let nb = notebook("body");
         let spec = NewNote {
-            body: Some("## 背景\n\n本文がここにある。\n".into()),
+            body: Some("## 背景\n\n本文がここにある。".into()),
             ..NewNote::new("記録", "knowledge")
         };
         let path = create(&nb, &spec, &Zoned::now()).unwrap();
         let raw = std::fs::read_to_string(&path).unwrap();
 
-        assert!(raw.ends_with("## 背景\n\n本文がここにある。\n"));
-        // The frontmatter title stands on its own; no heading is injected above
-        // a body that already has one.
-        assert!(!raw.contains("# 記録\n"));
+        assert!(raw.ends_with("# 記録\n\n## 背景\n\n本文がここにある。\n"), "{raw}");
         assert_eq!(nb.read(&path).unwrap().title, "記録");
+        std::fs::remove_dir_all(&nb.root).unwrap();
+    }
+
+    #[test]
+    fn content_without_a_title_stands_alone() {
+        let nb = notebook("untitled-body");
+        let spec = NewNote { body: Some("just content".into()), ..NewNote::untitled("knowledge") };
+        let path = create(&nb, &spec, &Zoned::now()).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+
+        assert!(raw.ends_with("just content\n"), "{raw}");
+        assert!(!raw.contains("# "), "{raw}");
         std::fs::remove_dir_all(&nb.root).unwrap();
     }
 

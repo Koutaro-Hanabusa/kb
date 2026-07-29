@@ -108,6 +108,17 @@ Markdown, normally a git repository:
 Existing habits, scripts, and notebooks carry over. Every `nb` subcommand
 resolves, with the same short aliases.
 
+Compatibility is a claim about behaviour, so it is checked by running both tools
+over the same operations and diffing what each produced:
+
+```sh
+./scripts/compat-check.sh     # requires nb on PATH
+```
+
+It covers filenames, note bodies, id resolution and retirement, bookmark and
+todo formats, `.index` / `.pindex` / `.archived`, and the settings file — 17
+comparisons, all matching as of the current version.
+
 **Item references.** Commands take `[<notebook>:][<folder>/]<id|filename|title>`:
 
 ```sh
