@@ -392,32 +392,91 @@ pub struct ShellArgs {
 
 #[derive(Args)]
 pub struct ImportArgs {
-    /// Files or directories to import
-    #[arg(value_name = "PATH", required = true)]
-    pub paths: Vec<PathBuf>,
+    #[command(subcommand)]
+    pub command: Option<ImportCommand>,
 
+    /// Files, directories, or URLs to import
+    #[arg(value_name = "PATH|URL")]
+    pub paths: Vec<String>,
+
+    #[command(flatten)]
+    pub opts: ImportOpts,
+}
+
+#[derive(Args, Default)]
+pub struct ImportOpts {
     /// Destination, optionally scoped to a notebook
     #[arg(long, value_name = "SELECTOR")]
     pub to: Option<String>,
 
-    /// Move the files instead of copying them
+    /// Convert HTML content to Markdown
     #[arg(long)]
-    pub move_files: bool,
+    pub convert: bool,
+}
+
+#[derive(Subcommand)]
+pub enum ImportCommand {
+    /// Copy files into the notebook
+    Copy(ImportPathsArgs),
+    /// Move files into the notebook
+    Move(ImportPathsArgs),
+    /// Download a URL into the notebook
+    Download(ImportPathsArgs),
+    /// Import bookmarks from a browser export file
+    Bookmarks(ImportPathsArgs),
+    /// Import a notebook directory to make it global
+    Notebook(NotebookImportArgs),
+}
+
+#[derive(Args)]
+pub struct ImportPathsArgs {
+    /// Files, directories, or URLs
+    #[arg(value_name = "PATH|URL", required = true)]
+    pub paths: Vec<String>,
+
+    #[command(flatten)]
+    pub opts: ImportOpts,
 }
 
 #[derive(Args)]
 pub struct ExportArgs {
+    #[command(subcommand)]
+    pub command: Option<ExportCommand>,
+
     /// Item to export
     #[arg(value_name = "SELECTOR")]
-    pub selector: String,
+    pub selector: Option<String>,
 
     /// Destination path
     #[arg(value_name = "PATH")]
-    pub path: PathBuf,
+    pub path: Option<PathBuf>,
 
     /// Overwrite an existing file
     #[arg(short, long)]
     pub force: bool,
+
+    /// Extra arguments passed to pandoc when converting
+    #[arg(last = true, value_name = "PANDOC_ARGS")]
+    pub pandoc_args: Vec<String>,
+}
+
+#[derive(Subcommand)]
+pub enum ExportCommand {
+    /// Export a notebook to a path
+    Notebook(NotebookExportArgs),
+    /// Convert an item with pandoc, writing to standard output or a file
+    Pandoc(ExportPandocArgs),
+}
+
+#[derive(Args)]
+pub struct ExportPandocArgs {
+    /// Item to convert
+    #[arg(value_name = "SELECTOR")]
+    pub selector: String,
+
+    /// Arguments passed to pandoc (e.g. `-- --to html`)
+    #[arg(last = true, value_name = "PANDOC_ARGS")]
+    pub pandoc_args: Vec<String>,
 }
 
 #[derive(Args)]

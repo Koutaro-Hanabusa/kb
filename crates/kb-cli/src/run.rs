@@ -1567,33 +1567,77 @@ pub fn interactive_shell<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShellArgs) -> Re
 // ─────────────────────────── import / export ───────────────────────────
 
 pub fn import<W: Write>(ctx: &mut Ctx<'_, W>, args: &ImportArgs) -> Result<()> {
-    let target = args.to.clone().unwrap_or_default();
-    let parsed = Selector::parse(&target);
-    let notebook = ctx.notebook(parsed.notebook.as_deref())?.clone();
-    let dir = notebook.root.join(parsed.folder_path());
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("creating {}", dir.display()))?;
-
-    for source in &args.paths {
-        if !source.exists() {
-            bail!("not found: {}", source.display());
+    match &args.command {
+        Some(ImportCommand::Notebook(notebook)) => {
+            return notebooks(ctx, &NotebooksArgs {
+                command: Some(NotebooksCommand::Import(NotebookImportArgs {
+                    path: notebook.path.clone(),
+                    name: notebook.name.clone(),
+                })),
+                names: false,
+                paths: false,
+            });
         }
-        let name = source
-            .file_name()
-            .with_context(|| format!("{} has no filename", source.display()))?;
-        let destination = unique_beside(&dir.join(name));
+        Some(ImportCommand::Bookmarks(paths)) => {
+            return import_bookmarks(ctx, &paths.paths, &paths.opts);
+        }
+        Some(ImportCommand::Copy(paths)) => {
+            return import_files(ctx, &paths.paths, &paths.opts, false);
+        }
+        Some(ImportCommand::Move(paths)) => {
+            return import_files(ctx, &paths.paths, &paths.opts, true);
+        }
+        Some(ImportCommand::Download(paths)) => {
+            return import_files(ctx, &paths.paths, &paths.opts, false);
+        }
+        None => {}
+    }
+    import_files(ctx, &args.paths, &args.opts, false)
+}
 
-        if args.move_files {
-            std::fs::rename(source, &destination).or_else(|_| {
-                // A rename across filesystems fails; fall back to copy + remove.
-                std::fs::copy(source, &destination)
-                    .and_then(|_| std::fs::remove_file(source))
-                    .map(|_| ())
-            })?;
+/// Copy, move, or download files into a notebook.
+fn import_files<W: Write>(
+    ctx: &mut Ctx<'_, W>,
+    sources: &[String],
+    opts: &ImportOpts,
+    move_files: bool,
+) -> Result<()> {
+    if sources.is_empty() {
+        bail!("nothing to import");
+    }
+    let dir = import_destination(ctx, opts)?;
+
+    for source in sources {
+        let destination = if source.contains("://") {
+            download_into(&dir, source)?
         } else {
-            std::fs::copy(source, &destination)
-                .with_context(|| format!("copying {}", source.display()))?;
-        }
+            let path = PathBuf::from(source);
+            if !path.exists() {
+                bail!("not found: {}", path.display());
+            }
+            let name = path
+                .file_name()
+                .with_context(|| format!("{} has no filename", path.display()))?;
+            let destination = unique_beside(&dir.join(name));
+            if move_files {
+                std::fs::rename(&path, &destination).or_else(|_| {
+                    // A rename across filesystems fails; fall back to copy + remove.
+                    std::fs::copy(&path, &destination)
+                        .and_then(|_| std::fs::remove_file(&path))
+                        .map(|_| ())
+                })?;
+            } else {
+                std::fs::copy(&path, &destination)
+                    .with_context(|| format!("copying {}", path.display()))?;
+            }
+            destination
+        };
+
+        // `--convert` turns HTML and friends into Markdown, when pandoc is here.
+        let destination = match opts.convert && kb_core::convert::is_convertible(&destination) {
+            true => convert_in_place(ctx, &destination)?,
+            false => destination,
+        };
 
         let mut index = Index::load(&dir)?;
         index.add(&file_name(&destination));
@@ -1603,14 +1647,106 @@ pub fn import<W: Write>(ctx: &mut Ctx<'_, W>, args: &ImportArgs) -> Result<()> {
     Ok(())
 }
 
+/// Replace a file with its Markdown conversion, keeping the original on failure.
+fn convert_in_place<W: Write>(ctx: &mut Ctx<'_, W>, path: &Path) -> Result<PathBuf> {
+    if !kb_core::convert::have_pandoc() {
+        writeln!(
+            ctx.out,
+            "{}",
+            ctx.style.dim("pandoc not found — imported without converting")
+        )?;
+        return Ok(path.to_path_buf());
+    }
+    let markdown = path.with_extension("md");
+    let markdown = unique_beside(&markdown);
+    kb_core::convert::to_markdown(path, &markdown)?;
+    std::fs::remove_file(path).with_context(|| format!("removing {}", path.display()))?;
+    Ok(markdown)
+}
+
+fn download_into(dir: &Path, url: &str) -> Result<PathBuf> {
+    let body = kb_core::bookmark::fetch(url)?;
+    let name = url
+        .rsplit('/')
+        .find(|segment| !segment.is_empty() && !segment.contains('?'))
+        .unwrap_or("download");
+    let destination = unique_beside(&dir.join(name));
+    std::fs::write(&destination, body)
+        .with_context(|| format!("writing {}", destination.display()))?;
+    Ok(destination)
+}
+
+/// Turn a browser bookmark export into one bookmark note per entry.
+fn import_bookmarks<W: Write>(
+    ctx: &mut Ctx<'_, W>,
+    sources: &[String],
+    opts: &ImportOpts,
+) -> Result<()> {
+    let target = opts.to.as_deref().unwrap_or_default();
+    let notebook = ctx.notebook(Selector::parse(target).notebook.as_deref())?.clone();
+    let dir = folder_path_of(target).to_string_lossy().into_owned();
+
+    let mut imported = 0usize;
+    for source in sources {
+        let html = std::fs::read_to_string(source)
+            .with_context(|| format!("reading {source}"))?;
+
+        for entry in kb_core::convert::parse_bookmarks(&html) {
+            let spec = kb_core::bookmark::NewBookmark {
+                url: entry.url,
+                title: Some(entry.title),
+                // The export already has the titles; fetching every page would
+                // turn an import into thousands of requests.
+                no_request: true,
+                ..Default::default()
+            };
+            kb_core::bookmark::create(&notebook, &dir, &spec, &jiff::Zoned::now())?;
+            imported += 1;
+        }
+    }
+    writeln!(ctx.out, "Imported {imported} bookmark(s).")?;
+    Ok(())
+}
+
+fn import_destination<W: Write>(ctx: &Ctx<'_, W>, opts: &ImportOpts) -> Result<PathBuf> {
+    let parsed = Selector::parse(opts.to.as_deref().unwrap_or_default());
+    let notebook = ctx.notebook(parsed.notebook.as_deref())?;
+    let dir = notebook.root.join(folder_path_of(opts.to.as_deref().unwrap_or_default()));
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("creating {}", dir.display()))?;
+    Ok(dir)
+}
+
 pub fn export<W: Write>(ctx: &mut Ctx<'_, W>, args: &ExportArgs) -> Result<()> {
-    let source = ctx.resolve(&args.selector)?.path().to_path_buf();
+    match &args.command {
+        Some(ExportCommand::Notebook(notebook)) => {
+            return notebooks(ctx, &NotebooksArgs {
+                command: Some(NotebooksCommand::Export(NotebookExportArgs {
+                    name: notebook.name.clone(),
+                    path: notebook.path.clone(),
+                })),
+                names: false,
+                paths: false,
+            });
+        }
+        Some(ExportCommand::Pandoc(pandoc)) => {
+            let source = ctx.resolve(&pandoc.selector)?.path().to_path_buf();
+            let converted = kb_core::convert::pandoc(&source, &pandoc.pandoc_args)?;
+            write!(ctx.out, "{converted}")?;
+            return Ok(());
+        }
+        None => {}
+    }
+
+    let selector = args.selector.as_deref().context("no item given")?;
+    let path = args.path.as_ref().context("no destination given")?;
+    let source = ctx.resolve(selector)?.path().to_path_buf();
 
     // A directory destination keeps the item's own filename.
-    let destination = if args.path.is_dir() {
-        args.path.join(source.file_name().context("item has no filename")?)
+    let destination = if path.is_dir() {
+        path.join(source.file_name().context("item has no filename")?)
     } else {
-        args.path.clone()
+        path.clone()
     };
 
     if destination.exists() && !args.force {
@@ -1623,8 +1759,27 @@ pub fn export<W: Write>(ctx: &mut Ctx<'_, W>, args: &ExportArgs) -> Result<()> {
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::copy(&source, &destination)
-        .with_context(|| format!("copying {} to {}", source.display(), destination.display()))?;
+
+    // A different extension on the destination means "convert to that format",
+    // which is what pandoc is for.
+    let converting = destination.extension() != source.extension()
+        && !args.pandoc_args.is_empty()
+        || (destination.extension() != source.extension()
+            && kb_core::convert::have_pandoc()
+            && destination.extension().is_some());
+
+    if converting {
+        let mut pandoc_args = args.pandoc_args.clone();
+        if !pandoc_args.iter().any(|arg| arg == "-o" || arg == "--output") {
+            pandoc_args.push("--output".into());
+            pandoc_args.push(destination.display().to_string());
+        }
+        kb_core::convert::pandoc(&source, &pandoc_args)?;
+    } else {
+        std::fs::copy(&source, &destination).with_context(|| {
+            format!("copying {} to {}", source.display(), destination.display())
+        })?;
+    }
     writeln!(ctx.out, "{}", destination.display())?;
     Ok(())
 }
@@ -1703,4 +1858,31 @@ fn to_query(filters: &FilterArgs) -> Result<Query> {
 
 fn file_name(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A folder option names a folder, whole. Reading it as a selector puts the
+    /// last segment in `target` and leaves the path empty — which silently
+    /// dropped notes into the notebook root twice before this was pinned down.
+    #[test]
+    fn a_folder_option_is_a_folder_all_the_way_down() {
+        assert_eq!(folder_path_of("knowledge"), PathBuf::from("knowledge"));
+        assert_eq!(folder_path_of("knowledge/"), PathBuf::from("knowledge"));
+        assert_eq!(folder_path_of("a/b/c"), PathBuf::from("a/b/c"));
+        assert_eq!(folder_path_of("work:knowledge"), PathBuf::from("knowledge"));
+        assert_eq!(folder_path_of("work:a/b"), PathBuf::from("a/b"));
+        assert_eq!(folder_path_of(""), PathBuf::new());
+    }
+
+    #[test]
+    fn a_bare_argument_is_a_path_when_it_has_a_slash_or_an_extension() {
+        assert!(looks_like_path("knowledge/"));
+        assert!(looks_like_path("knowledge/noext"));
+        assert!(looks_like_path("note.md"));
+        assert!(!looks_like_path("content only, no extension"));
+        assert!(!looks_like_path("日本語の本文"));
+    }
 }

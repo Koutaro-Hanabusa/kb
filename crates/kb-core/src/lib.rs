@@ -7,6 +7,7 @@
 
 pub mod bookmark;
 pub mod browse;
+pub mod convert;
 pub mod create;
 pub mod encrypt;
 pub mod frontmatter;
