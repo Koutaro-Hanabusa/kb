@@ -34,8 +34,11 @@ pub struct NewBookmark {
 
 /// Whether a path is a bookmark.
 pub fn is_bookmark(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|name| name.to_string_lossy().to_ascii_lowercase().ends_with(BOOKMARK_EXT))
+    path.file_name().is_some_and(|name| {
+        name.to_string_lossy()
+            .to_ascii_lowercase()
+            .ends_with(BOOKMARK_EXT)
+    })
 }
 
 /// The heading text: `<title> (<domain>)`.
@@ -72,8 +75,11 @@ pub fn render(spec: &NewBookmark, title: &str) -> String {
         }
     }
     if !spec.tags.is_empty() {
-        let tags: Vec<String> =
-            spec.tags.iter().map(|tag| format!("#{}", tag.trim_start_matches('#'))).collect();
+        let tags: Vec<String> = spec
+            .tags
+            .iter()
+            .map(|tag| format!("#{}", tag.trim_start_matches('#')))
+            .collect();
         out.push_str(&format!("\n## Tags\n\n{}\n", tags.join(" ")));
     }
     out
@@ -94,7 +100,10 @@ pub fn fetch(url: &str) -> Result<String> {
         .header("User-Agent", "kb")
         .call()
         .with_context(|| format!("requesting {url}"))?;
-    response.body_mut().read_to_string().with_context(|| format!("reading {url}"))
+    response
+        .body_mut()
+        .read_to_string()
+        .with_context(|| format!("reading {url}"))
 }
 
 /// Extract the contents of the HTML `<title>` element.
@@ -144,22 +153,28 @@ pub fn create(
         .unwrap_or_else(|| spec.url.clone());
 
     let stem = match &spec.filename {
-        Some(name) => name.trim_end_matches(".md").trim_end_matches(".bookmark").to_string(),
+        Some(name) => name
+            .trim_end_matches(".md")
+            .trim_end_matches(".bookmark")
+            .to_string(),
         None => timestamp_stem(now),
     };
     let path = available_path(&directory, &stem);
     // The body is `nb`'s byte for byte; the frontmatter sits above it so
     // bookmarks list and filter alongside every other note.
     let stamp = crate::note::format_timestamp(now);
-    let tags = if spec.tags.is_empty() { vec!["bookmark".to_string()] } else { spec.tags.clone() };
+    let tags = if spec.tags.is_empty() {
+        vec!["bookmark".to_string()]
+    } else {
+        spec.tags.clone()
+    };
     let contents = format!(
         "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{}",
         crate::frontmatter::yaml_scalar(&heading(spec, &title)),
         crate::frontmatter::yaml_tags(&tags),
         render(spec, &title),
     );
-    std::fs::write(&path, contents)
-        .with_context(|| format!("writing {}", path.display()))?;
+    std::fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
 
     let mut index = Index::load(&directory)?;
     index.add(&file_name(&path));
@@ -167,8 +182,7 @@ pub fn create(
     let source_path = match (&source, spec.save_source) {
         (Some(html), true) => {
             let path = directory.join(format!("{stem}.html"));
-            std::fs::write(&path, html)
-                .with_context(|| format!("writing {}", path.display()))?;
+            std::fs::write(&path, html).with_context(|| format!("writing {}", path.display()))?;
             index.add(&file_name(&path));
             Some(path)
         }
@@ -183,7 +197,11 @@ pub fn create(
 pub fn url_of(raw: &str) -> Option<String> {
     raw.lines()
         .map(str::trim)
-        .find_map(|line| line.strip_prefix('<')?.strip_suffix('>').map(str::to_string))
+        .find_map(|line| {
+            line.strip_prefix('<')?
+                .strip_suffix('>')
+                .map(str::to_string)
+        })
         .filter(|url| url.contains("://"))
 }
 
@@ -199,11 +217,16 @@ fn available_path(dir: &Path, stem: &str) -> PathBuf {
 }
 
 fn file_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 fn non_empty(value: &Option<String>) -> Option<&str> {
-    value.as_deref().map(str::trim).filter(|text| !text.is_empty())
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
 }
 
 #[cfg(test)]
@@ -211,7 +234,10 @@ mod tests {
     use super::*;
 
     fn spec(url: &str) -> NewBookmark {
-        NewBookmark { url: url.to_string(), ..Default::default() }
+        NewBookmark {
+            url: url.to_string(),
+            ..Default::default()
+        }
     }
 
     /// Byte-for-byte the output of
@@ -246,22 +272,40 @@ mod tests {
 
     #[test]
     fn extracts_the_domain() {
-        assert_eq!(domain_of("https://example.com/path").as_deref(), Some("example.com"));
-        assert_eq!(domain_of("http://www.example.com").as_deref(), Some("example.com"));
-        assert_eq!(domain_of("https://sub.example.com:8443/x").as_deref(), Some("sub.example.com"));
-        assert_eq!(domain_of("https://user@example.com/x").as_deref(), Some("example.com"));
+        assert_eq!(
+            domain_of("https://example.com/path").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            domain_of("http://www.example.com").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            domain_of("https://sub.example.com:8443/x").as_deref(),
+            Some("sub.example.com")
+        );
+        assert_eq!(
+            domain_of("https://user@example.com/x").as_deref(),
+            Some("example.com")
+        );
         assert_eq!(domain_of("not a url"), Some("not a url".to_string()));
     }
 
     #[test]
     fn reads_the_html_title() {
-        assert_eq!(html_title("<html><head><title>Hi</title>").as_deref(), Some("Hi"));
+        assert_eq!(
+            html_title("<html><head><title>Hi</title>").as_deref(),
+            Some("Hi")
+        );
         // Attributes on the element, and whitespace inside it.
         assert_eq!(
             html_title("<TITLE lang=\"en\">\n  Spaced  Out\n</TITLE>").as_deref(),
             Some("Spaced Out")
         );
-        assert_eq!(html_title("<title>A &amp; B &#39;quoted&#39;</title>").as_deref(), Some("A & B 'quoted'"));
+        assert_eq!(
+            html_title("<title>A &amp; B &#39;quoted&#39;</title>").as_deref(),
+            Some("A & B 'quoted'")
+        );
         assert_eq!(html_title("<title></title>"), None);
         assert_eq!(html_title("<html>no title here</html>"), None);
         assert_eq!(html_title("<title>unterminated"), None);
@@ -269,19 +313,28 @@ mod tests {
 
     #[test]
     fn a_multiline_quote_is_quoted_per_line() {
-        let spec = NewBookmark { quote: Some("one\ntwo".into()), ..spec("https://e.com") };
+        let spec = NewBookmark {
+            quote: Some("one\ntwo".into()),
+            ..spec("https://e.com")
+        };
         assert!(render(&spec, "T").contains("> one\n> two\n"));
     }
 
     #[test]
     fn a_related_selector_is_not_bracketed_like_a_url() {
-        let spec = NewBookmark { related: vec!["home:3".into()], ..spec("https://e.com") };
+        let spec = NewBookmark {
+            related: vec!["home:3".into()],
+            ..spec("https://e.com")
+        };
         assert!(render(&spec, "T").contains("- home:3\n"));
     }
 
     #[test]
     fn tags_are_not_double_hashed() {
-        let spec = NewBookmark { tags: vec!["#a".into(), "b".into()], ..spec("https://e.com") };
+        let spec = NewBookmark {
+            tags: vec!["#a".into(), "b".into()],
+            ..spec("https://e.com")
+        };
         assert!(render(&spec, "T").ends_with("#a #b\n"));
     }
 

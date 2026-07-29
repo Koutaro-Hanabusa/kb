@@ -5,7 +5,7 @@
 //! deliberately one thread and no framework: it serves one person on localhost.
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use tiny_http::{Header, Response, Server};
@@ -76,12 +76,25 @@ pub fn serve(workspace: &Workspace, port: u16) -> Result<()> {
 
         let (status, html) = match handle(workspace, &url, is_post.then_some(body.as_str())) {
             Ok(html) => (200, html),
-            Err(error) => (404, page("Not found", &format!("<p class=\"error\">{}</p>", render::escape(&error.to_string())), workspace, "")),
+            Err(error) => (
+                404,
+                page(
+                    "Not found",
+                    &format!(
+                        "<p class=\"error\">{}</p>",
+                        render::escape(&error.to_string())
+                    ),
+                    workspace,
+                    "",
+                ),
+            ),
         };
 
         let header = Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
             .expect("valid header");
-        let response = Response::from_string(html).with_status_code(status).with_header(header);
+        let response = Response::from_string(html)
+            .with_status_code(status)
+            .with_header(header);
         let _ = request.respond(response);
     }
     Ok(())
@@ -132,7 +145,12 @@ pub fn handle(workspace: &Workspace, url: &str, post_body: Option<&str>) -> Resu
 /// Apply an add, edit, or delete submitted from the browser.
 fn handle_post(workspace: &Workspace, request: &Request, body: &str) -> Result<String> {
     let fields = parse_form(body);
-    let get = |key: &str| fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+    let get = |key: &str| {
+        fields
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
 
     if request.delete {
         let resolved = selector::resolve(workspace, &Selector::parse(&request.selector))?;
@@ -151,7 +169,12 @@ fn handle_post(workspace: &Workspace, request: &Request, body: &str) -> Result<S
             title: get("title").filter(|t| !t.trim().is_empty()),
             dir: String::new(),
             tags: get("tags")
-                .map(|tags| tags.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
+                .map(|tags| {
+                    tags.split(',')
+                        .map(|t| t.trim().to_string())
+                        .filter(|t| !t.is_empty())
+                        .collect()
+                })
                 .unwrap_or_default(),
             body: get("content"),
             filename: None,
@@ -189,7 +212,7 @@ fn parse_form(body: &str) -> Vec<(String, String)> {
 
 // ─────────────────────────── views ───────────────────────────
 
-fn render_note(workspace: &Workspace, selector: &str, path: &PathBuf, raw: &str) -> String {
+fn render_note(workspace: &Workspace, selector: &str, path: &Path, raw: &str) -> String {
     let notebook = notebook_of(workspace, selector);
     let base = LinkBase::new("", &notebook);
     let doc = crate::Document::split(raw);
@@ -197,10 +220,15 @@ fn render_note(workspace: &Workspace, selector: &str, path: &PathBuf, raw: &str)
 
     let note = Note::parse(raw, path, &notebook, path);
     let title = render::escape(&note.title);
-    page(&note.title, &format!("<article>{body}</article>"), workspace, &crumbs(selector, &title))
+    page(
+        &note.title,
+        &format!("<article>{body}</article>"),
+        workspace,
+        &crumbs(selector, &title),
+    )
 }
 
-fn render_listing(workspace: &Workspace, selector: &str, dir: &PathBuf) -> String {
+fn render_listing(workspace: &Workspace, selector: &str, dir: &Path) -> String {
     let index = Index::load(dir).unwrap_or_default();
     let notebook = notebook_of(workspace, selector);
 
@@ -226,7 +254,11 @@ fn render_listing(workspace: &Workspace, selector: &str, dir: &PathBuf) -> Strin
         ));
     }
 
-    let heading = if selector.is_empty() { notebook.clone() } else { selector.to_string() };
+    let heading = if selector.is_empty() {
+        notebook.clone()
+    } else {
+        selector.to_string()
+    };
     let add = format!(
         "<p><a class=\"button\" href=\"/{}:?--add\">+ add</a></p>",
         render::url_encode(&notebook)
@@ -249,7 +281,12 @@ fn render_index(workspace: &Workspace) -> String {
             render::escape(&notebook.name)
         ));
     }
-    page("notebooks", &format!("<ul class=\"listing\">{rows}</ul>"), workspace, "notebooks")
+    page(
+        "notebooks",
+        &format!("<ul class=\"listing\">{rows}</ul>"),
+        workspace,
+        "notebooks",
+    )
 }
 
 fn render_search(workspace: &Workspace, query: &str) -> String {
@@ -265,19 +302,30 @@ fn render_search(workspace: &Workspace, query: &str) -> String {
     // A `#tag` query matches both frontmatter tags and inline `#tag` mentions —
     // notes here carry them both ways, and finding only half would look broken.
     if let Some(tag) = query.strip_prefix('#') {
-        let tagged = Query { tags: vec![tag.to_string()], ..Query::default() };
+        let tagged = Query {
+            tags: vec![tag.to_string()],
+            ..Query::default()
+        };
         for note in search::filter_notes(workspace, &tagged).unwrap_or_default() {
             push(&note, &mut rows);
         }
     }
 
-    let text = Query { fixed_string: true, ..Query::new(query) };
+    let text = Query {
+        fixed_string: true,
+        ..Query::new(query)
+    };
     for hit in search::search(workspace, &text).unwrap_or_default() {
         push(&hit.note, &mut rows);
     }
 
     let heading = format!("search: {}", render::escape(query));
-    page(&heading, &format!("<ul class=\"listing\">{rows}</ul>"), workspace, &heading)
+    page(
+        &heading,
+        &format!("<ul class=\"listing\">{rows}</ul>"),
+        workspace,
+        &heading,
+    )
 }
 
 fn result_row(note: &Note) -> String {
@@ -300,7 +348,12 @@ fn render_edit(workspace: &Workspace, selector: &str, raw: &str) -> String {
         render::escape(raw),
         render::url_encode(selector)
     );
-    page(&format!("edit {selector}"), &body, workspace, &format!("edit {}", render::escape(selector)))
+    page(
+        &format!("edit {selector}"),
+        &body,
+        workspace,
+        &format!("edit {}", render::escape(selector)),
+    )
 }
 
 fn render_add(workspace: &Workspace, notebook: &str) -> String {
@@ -315,7 +368,7 @@ fn render_add(workspace: &Workspace, notebook: &str) -> String {
     page("add", &body, workspace, "add")
 }
 
-fn render_delete(workspace: &Workspace, selector: &str, path: &PathBuf) -> String {
+fn render_delete(workspace: &Workspace, selector: &str, path: &Path) -> String {
     let body = format!(
         "<p>Delete <code>{}</code>?</p>\
          <form method=\"post\" action=\"/{}?--delete\">\
@@ -325,7 +378,12 @@ fn render_delete(workspace: &Workspace, selector: &str, path: &PathBuf) -> Strin
         render::url_encode(selector),
         render::url_encode(selector)
     );
-    page("delete", &body, workspace, &format!("delete {}", render::escape(selector)))
+    page(
+        "delete",
+        &body,
+        workspace,
+        &format!("delete {}", render::escape(selector)),
+    )
 }
 
 // ─────────────────────────── chrome ───────────────────────────
@@ -420,13 +478,22 @@ fn notebook_of(workspace: &Workspace, selector: &str) -> String {
 }
 
 fn join_selector(selector: &str, name: &str) -> String {
-    let rest = selector.split_once(':').map(|(_, rest)| rest).unwrap_or(selector);
+    let rest = selector
+        .split_once(':')
+        .map(|(_, rest)| rest)
+        .unwrap_or(selector);
     let rest = rest.trim_end_matches('/');
-    if rest.is_empty() { name.to_string() } else { format!("{rest}/{name}") }
+    if rest.is_empty() {
+        name.to_string()
+    } else {
+        format!("{rest}/{name}")
+    }
 }
 
 fn file_name(path: &std::path::Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -466,7 +533,10 @@ mod tests {
 
     #[test]
     fn decodes_a_percent_encoded_selector() {
-        assert_eq!(Request::parse("/home:%E6%97%A5%E6%9C%AC").selector, "home:日本");
+        assert_eq!(
+            Request::parse("/home:%E6%97%A5%E6%9C%AC").selector,
+            "home:日本"
+        );
     }
 
     #[test]

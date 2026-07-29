@@ -387,7 +387,12 @@ pub struct RunArgs {
     pub notebook: Option<String>,
 
     /// Command and arguments
-    #[arg(value_name = "COMMAND", required = true, trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(
+        value_name = "COMMAND",
+        required = true,
+        trailing_var_arg = true,
+        allow_hyphen_values = true
+    )]
     pub command: Vec<String>,
 }
 
@@ -1015,7 +1020,11 @@ pub struct GitArgs {
     pub notebook: Option<String>,
 
     /// Arguments passed through to git
-    #[arg(value_name = "ARGS", trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(
+        value_name = "ARGS",
+        trailing_var_arg = true,
+        allow_hyphen_values = true
+    )]
     pub args: Vec<String>,
 }
 

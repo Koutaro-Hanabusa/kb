@@ -88,11 +88,16 @@ fn plan_note(
         return None;
     }
 
-    let lines: String =
-        added.iter().map(|(key, value)| format!("{key}: {value}\n")).collect();
+    let lines: String = added
+        .iter()
+        .map(|(key, value)| format!("{key}: {value}\n"))
+        .collect();
     let (contents, creates_block) = match &doc.span {
         Some(span) => (insert_into_block(raw, span.clone(), &lines), false),
-        None => (format!("---\n{lines}---\n\n{}", raw.trim_start_matches('\n')), true),
+        None => (
+            format!("---\n{lines}---\n\n{}", raw.trim_start_matches('\n')),
+            true,
+        ),
     };
 
     Some(Plan {
@@ -133,7 +138,9 @@ fn derive_created(path: &Path, history: Option<&git::FileHistory>) -> Option<Zon
 }
 
 fn derive_updated(path: &Path, history: Option<&git::FileHistory>) -> Option<Zoned> {
-    history.map(|h| h.updated.clone()).or_else(|| timestamp_from_filename(path))
+    history
+        .map(|h| h.updated.clone())
+        .or_else(|| timestamp_from_filename(path))
 }
 
 /// Write a planned change to disk.
@@ -146,8 +153,7 @@ pub fn apply(plan: &Plan) -> Result<()> {
         ".kb-migrate-{}.tmp",
         plan.path.file_name().unwrap_or_default().to_string_lossy()
     ));
-    std::fs::write(&tmp, &plan.contents)
-        .with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::write(&tmp, &plan.contents).with_context(|| format!("writing {}", tmp.display()))?;
     std::fs::rename(&tmp, &plan.path)
         .with_context(|| format!("replacing {}", plan.path.display()))?;
     Ok(())
@@ -158,7 +164,10 @@ mod tests {
     use super::*;
 
     fn notebook() -> Notebook {
-        Notebook { name: "home".into(), root: PathBuf::from("/nb/home") }
+        Notebook {
+            name: "home".into(),
+            root: PathBuf::from("/nb/home"),
+        }
     }
 
     fn plan_for(raw: &str, rel: &str) -> Option<Plan> {
@@ -191,7 +200,10 @@ mod tests {
         assert!(!plan.creates_block);
         let keys: Vec<&str> = plan.added.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(keys, vec!["tags"]);
-        assert_eq!(plan.contents, "---\ntitle: Kept\nstatus: draft\ntags: [knowledge]\n---\n# Heading\n");
+        assert_eq!(
+            plan.contents,
+            "---\ntitle: Kept\nstatus: draft\ntags: [knowledge]\n---\n# Heading\n"
+        );
     }
 
     #[test]
@@ -203,7 +215,11 @@ mod tests {
     #[test]
     fn takes_created_from_an_nb_filename() {
         let plan = plan_for("no heading", "knowledge/20260108203523.md").expect("plan");
-        let created = plan.added.iter().find(|(k, _)| k == "created").expect("created");
+        let created = plan
+            .added
+            .iter()
+            .find(|(k, _)| k == "created")
+            .expect("created");
         assert!(created.1.starts_with("2026-01-08T20:35:23"));
     }
 
@@ -217,7 +233,11 @@ mod tests {
         };
         let plan = plan_note("body", &path, &notebook(), &rel_path, Some(&history)).expect("plan");
         let get = |key: &str| {
-            plan.added.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).unwrap()
+            plan.added
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap()
         };
         // The filename records when the note was written; git only knows when it
         // was committed, which is later.
@@ -255,11 +275,19 @@ mod tests {
         assert_eq!(note.title, "nb: 遅い理由");
         assert_eq!(note.tags, vec!["knowledge"]);
         assert_eq!(
-            note.created.expect("created").strftime("%Y-%m-%dT%H:%M:%S").to_string(),
+            note.created
+                .expect("created")
+                .strftime("%Y-%m-%dT%H:%M:%S")
+                .to_string(),
             "2026-01-08T20:35:23"
         );
         assert!(note.has_frontmatter);
-        assert_eq!(Document::split(&plan.contents).body.trim_start_matches('\n'), body);
+        assert_eq!(
+            Document::split(&plan.contents)
+                .body
+                .trim_start_matches('\n'),
+            body
+        );
     }
 
     /// Re-running the migration must be a no-op, not a second round of keys.
@@ -272,7 +300,11 @@ mod tests {
     #[test]
     fn quotes_a_title_that_yaml_would_misread() {
         let plan = plan_for("# nb: 遅い理由\n", "knowledge/a.md").expect("plan");
-        let title = plan.added.iter().find(|(k, _)| k == "title").expect("title");
+        let title = plan
+            .added
+            .iter()
+            .find(|(k, _)| k == "title")
+            .expect("title");
         assert_eq!(title.1, "\"nb: 遅い理由\"");
     }
 }

@@ -33,7 +33,14 @@ pub fn history(repo: &Path) -> Result<HashMap<PathBuf, FileHistory>> {
         repo,
         // `core.quotepath=false` keeps non-ASCII filenames readable; without it
         // git escapes them into octal and no path ever matches.
-        &["-c", "core.quotepath=false", "log", "--reverse", "--format=%x01%aI", "--name-only"],
+        &[
+            "-c",
+            "core.quotepath=false",
+            "log",
+            "--reverse",
+            "--format=%x01%aI",
+            "--name-only",
+        ],
     )?;
 
     let mut histories: HashMap<PathBuf, FileHistory> = HashMap::new();
@@ -50,7 +57,10 @@ pub fn history(repo: &Path) -> Result<HashMap<PathBuf, FileHistory>> {
         histories
             .entry(PathBuf::from(line))
             .and_modify(|h| h.updated = date.clone())
-            .or_insert_with(|| FileHistory { created: date.clone(), updated: date.clone() });
+            .or_insert_with(|| FileHistory {
+                created: date.clone(),
+                updated: date.clone(),
+            });
     }
     Ok(histories)
 }
@@ -89,7 +99,13 @@ impl StagedChange {
 pub fn staged_changes(repo: &Path) -> Result<Vec<StagedChange>> {
     let output = run(
         repo,
-        &["-c", "core.quotepath=false", "diff", "--cached", "--name-status"],
+        &[
+            "-c",
+            "core.quotepath=false",
+            "diff",
+            "--cached",
+            "--name-status",
+        ],
     )?;
     Ok(output
         .lines()
@@ -143,13 +159,18 @@ pub fn clone(url: &str, into: &Path, branch: Option<&str>) -> Result<()> {
         .output()
         .context("running `git clone`")?;
     if !output.status.success() {
-        bail!("git clone failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+        bail!(
+            "git clone failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
     Ok(())
 }
 
 pub fn current_branch(repo: &Path) -> Result<String> {
-    Ok(run(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string())
+    Ok(run(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string())
 }
 
 /// Set the commit author recorded for this repository.
@@ -166,13 +187,18 @@ pub fn set_author(repo: &Path, name: Option<&str>, email: Option<&str>) -> Resul
 /// The commit author configured for this repository, as `(name, email)`.
 pub fn author(repo: &Path) -> (Option<String>, Option<String>) {
     let read = |key: &str| {
-        run(repo, &["config", "--get", key]).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+        run(repo, &["config", "--get", key])
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
     };
     (read("user.name"), read("user.email"))
 }
 
 pub fn remote_url(repo: &Path) -> Result<String> {
-    Ok(run(repo, &["remote", "get-url", "origin"])?.trim().to_string())
+    Ok(run(repo, &["remote", "get-url", "origin"])?
+        .trim()
+        .to_string())
 }
 
 /// Point `origin` at `url`, adding the remote if it is not there yet.
@@ -187,7 +213,11 @@ pub fn set_remote(repo: &Path, url: &str) -> Result<()> {
 /// Track `branch` on `origin` for the current branch.
 pub fn set_upstream(repo: &Path, branch: &str) -> Result<()> {
     run(repo, &["fetch", "origin", branch])?;
-    run(repo, &["branch", "--set-upstream-to", &format!("origin/{branch}")]).map(|_| ())
+    run(
+        repo,
+        &["branch", "--set-upstream-to", &format!("origin/{branch}")],
+    )
+    .map(|_| ())
 }
 
 /// Branch names on a remote.
@@ -209,7 +239,10 @@ pub fn remote_branches(repo: &Path, url: Option<&str>) -> Result<Vec<String>> {
 pub fn remote_head(repo: &Path) -> Option<String> {
     let output = run(repo, &["ls-remote", "--symref", "origin", "HEAD"]).ok()?;
     output.lines().find_map(|line| {
-        line.strip_prefix("ref: refs/heads/")?.split_whitespace().next().map(str::to_string)
+        line.strip_prefix("ref: refs/heads/")?
+            .split_whitespace()
+            .next()
+            .map(str::to_string)
     })
 }
 
@@ -238,7 +271,14 @@ pub fn delete_remote_branch(repo: &Path, branch: &str) -> Result<()> {
 pub fn rename_remote_branch(repo: &Path, from: &str, to: &str) -> Result<()> {
     ensure_deletable(repo, from)?;
     run(repo, &["fetch", "origin", from])?;
-    run(repo, &["push", "origin", &format!("refs/remotes/origin/{from}:refs/heads/{to}")])?;
+    run(
+        repo,
+        &[
+            "push",
+            "origin",
+            &format!("refs/remotes/origin/{from}:refs/heads/{to}"),
+        ],
+    )?;
     delete_remote_branch(repo, from)
 }
 
@@ -254,7 +294,10 @@ pub fn reset_remote_branch(repo: &Path, branch: &str) -> Result<()> {
     let result = (|| -> Result<()> {
         run(&worktree, &["checkout", "--orphan", branch])?;
         run(&worktree, &["reset", "--hard"])?;
-        run(&worktree, &["commit", "--allow-empty", "-m", "Initial commit"])?;
+        run(
+            &worktree,
+            &["commit", "--allow-empty", "-m", "Initial commit"],
+        )?;
         run(&worktree, &["push", "--force", "origin", branch])?;
         Ok(())
     })();
@@ -287,7 +330,12 @@ fn run(repo: &Path, args: &[&str]) -> Result<String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git {} failed in {}: {}", args.join(" "), repo.display(), stderr.trim());
+        bail!(
+            "git {} failed in {}: {}",
+            args.join(" "),
+            repo.display(),
+            stderr.trim()
+        );
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
@@ -305,14 +353,24 @@ mod tests {
             vec!["config", "user.email", "test@example.com"],
             vec!["config", "user.name", "test"],
         ] {
-            Command::new("git").arg("-C").arg(&repo).args(&args).output().unwrap();
+            Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(&args)
+                .output()
+                .unwrap();
         }
         repo
     }
 
     fn commit_file(repo: &Path, name: &str, contents: &str, date: &str) {
         std::fs::write(repo.join(name), contents).unwrap();
-        Command::new("git").arg("-C").arg(repo).args(["add", "-A"]).output().unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["add", "-A"])
+            .output()
+            .unwrap();
         Command::new("git")
             .arg("-C")
             .arg(repo)
@@ -343,7 +401,12 @@ mod tests {
     #[test]
     fn handles_non_ascii_filenames() {
         let repo = init_repo("utf8");
-        commit_file(&repo, "日本語のノート.md", "text", "2026-03-01T12:00:00+09:00");
+        commit_file(
+            &repo,
+            "日本語のノート.md",
+            "text",
+            "2026-03-01T12:00:00+09:00",
+        );
         let hist = history(&repo).unwrap();
         assert!(hist.contains_key(Path::new("日本語のノート.md")));
         std::fs::remove_dir_all(&repo).unwrap();
@@ -352,10 +415,14 @@ mod tests {
     /// Set up a repo with a bare remote and one pushed branch.
     fn with_remote(name: &str) -> (PathBuf, PathBuf) {
         let repo = init_repo(name);
-        let bare = std::env::temp_dir()
-            .join(format!("kb-git-{name}-remote-{}.git", std::process::id()));
+        let bare =
+            std::env::temp_dir().join(format!("kb-git-{name}-remote-{}.git", std::process::id()));
         let _ = std::fs::remove_dir_all(&bare);
-        Command::new("git").args(["init", "--bare", "-q"]).arg(&bare).output().unwrap();
+        Command::new("git")
+            .args(["init", "--bare", "-q"])
+            .arg(&bare)
+            .output()
+            .unwrap();
 
         commit_file(&repo, "a.md", "x", "2026-01-01T00:00:00+09:00");
         set_remote(&repo, &bare.to_string_lossy()).unwrap();
@@ -398,7 +465,9 @@ mod tests {
         let (repo, bare) = with_remote("defaultbranch");
         let before = remote_branches(&repo, None).unwrap();
 
-        let error = rename_remote_branch(&repo, "master", "main").unwrap_err().to_string();
+        let error = rename_remote_branch(&repo, "master", "main")
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("default branch"), "{error}");
         assert!(delete_remote_branch(&repo, "master").is_err());
 
@@ -419,7 +488,11 @@ mod tests {
         // One empty commit, and the file is gone from that branch.
         let log = run(&repo, &["ls-remote", "origin", "refs/heads/topic"]).unwrap();
         assert!(!log.trim().is_empty());
-        assert!(remote_branches(&repo, None).unwrap().contains(&"topic".to_string()));
+        assert!(
+            remote_branches(&repo, None)
+                .unwrap()
+                .contains(&"topic".to_string())
+        );
 
         std::fs::remove_dir_all(&repo).unwrap();
         std::fs::remove_dir_all(&bare).unwrap();

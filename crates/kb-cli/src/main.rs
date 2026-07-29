@@ -49,7 +49,11 @@ fn main() -> Result<()> {
 
     let stdout = std::io::stdout();
     let mut out = std::io::BufWriter::new(stdout.lock());
-    let mut ctx = Ctx { workspace: &workspace, style: Style::detect(), out: &mut out };
+    let mut ctx = Ctx {
+        workspace: &workspace,
+        style: Style::detect(),
+        out: &mut out,
+    };
 
     match &cli.command {
         Some(Command::Add(args)) => run::add(&mut ctx, args)?,
@@ -113,15 +117,21 @@ fn main() -> Result<()> {
         None => match &cli.selector {
             Some(selector) => run::show(
                 &mut ctx,
-                &ShowArgs { selector: Some(selector.clone()), opts: cli.show },
+                &ShowArgs {
+                    selector: Some(selector.clone()),
+                    opts: cli.show,
+                },
                 ViewMode::Show,
             )?,
-            None => run::list(&mut ctx, &ListArgs {
-                selector: None,
-                filters: FilterArgs::default(),
-                paths_only: false,
-                json: false,
-            })?,
+            None => run::list(
+                &mut ctx,
+                &ListArgs {
+                    selector: None,
+                    filters: FilterArgs::default(),
+                    paths_only: false,
+                    json: false,
+                },
+            )?,
         },
     }
 
@@ -179,9 +189,9 @@ fn dispatch_plugin() -> Option<Result<()>> {
 /// Whether `name` is a subcommand or alias `kb` already provides.
 fn is_builtin(name: &str) -> bool {
     use clap::CommandFactory;
-    Cli::command().get_subcommands().any(|sub| {
-        sub.get_name() == name || sub.get_all_aliases().any(|alias| alias == name)
-    })
+    Cli::command()
+        .get_subcommands()
+        .any(|sub| sub.get_name() == name || sub.get_all_aliases().any(|alias| alias == name))
 }
 
 /// Die quietly when a pipe closes, the way every other CLI does.
@@ -198,7 +208,9 @@ fn restore_sigpipe() {
 
 /// `kb do <id>` is shorthand for `kb todo do <id>`.
 fn todo_shortcut(args: &commands::SelectorArgs, done: bool) -> commands::TodoArgs {
-    let target = commands::SelectorArgs { selector: args.selector.clone() };
+    let target = commands::SelectorArgs {
+        selector: args.selector.clone(),
+    };
     commands::TodoArgs {
         command: Some(if done {
             commands::TodoCommand::Do(target)

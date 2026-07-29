@@ -36,7 +36,10 @@ pub struct Query {
 
 impl Query {
     pub fn new(pattern: impl Into<String>) -> Self {
-        Self { pattern: pattern.into(), ..Default::default() }
+        Self {
+            pattern: pattern.into(),
+            ..Default::default()
+        }
     }
 }
 
@@ -71,7 +74,9 @@ pub fn search(workspace: &Workspace, query: &Query) -> Result<Vec<Hit>> {
         for path in notebook.note_paths() {
             // Read once and reuse the text for both metadata and matching;
             // walking the tree twice would double the syscalls for no gain.
-            let Ok(raw) = std::fs::read_to_string(&path) else { continue };
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             let note = Note::parse(&raw, &path, &notebook.name, &notebook.relative(&path));
             if !passes_filters(&note, query) {
                 continue;
@@ -106,7 +111,12 @@ pub fn search(workspace: &Workspace, query: &Query) -> Result<Vec<Hit>> {
 
             let title_match = matcher_hits(&matcher, note.title.as_bytes());
             if match_count > 0 || title_match {
-                hits.push(Hit { note, matches, match_count, title_match });
+                hits.push(Hit {
+                    note,
+                    matches,
+                    match_count,
+                    title_match,
+                });
             }
         }
     }
@@ -134,7 +144,9 @@ pub fn filter_notes(workspace: &Workspace, query: &Query) -> Result<Vec<Note>> {
         .collect();
 
     notes.sort_by(|a, b| {
-        b.sort_key().cmp(&a.sort_key()).then_with(|| a.rel_path.cmp(&b.rel_path))
+        b.sort_key()
+            .cmp(&a.sort_key())
+            .then_with(|| a.rel_path.cmp(&b.rel_path))
     });
     if let Some(limit) = query.limit {
         notes.truncate(limit);
@@ -195,10 +207,13 @@ mod tests {
 
     #[test]
     fn finds_matches_in_the_body() {
-        let root = fixture("body", &[
-            ("home/a.md", "# Alpha\n\nnix flakes are useful\n"),
-            ("home/b.md", "# Beta\n\nnothing here\n"),
-        ]);
+        let root = fixture(
+            "body",
+            &[
+                ("home/a.md", "# Alpha\n\nnix flakes are useful\n"),
+                ("home/b.md", "# Beta\n\nnothing here\n"),
+            ],
+        );
         let ws = Workspace::open(&root).unwrap();
         let hits = search(&ws, &Query::new("nix")).unwrap();
         assert_eq!(hits.len(), 1);
@@ -210,10 +225,13 @@ mod tests {
 
     #[test]
     fn line_numbers_account_for_frontmatter() {
-        let root = fixture("lines", &[(
-            "home/a.md",
-            "---\ntitle: Alpha\ntags: [x]\n---\n# Alpha\n\ntarget line\n",
-        )]);
+        let root = fixture(
+            "lines",
+            &[(
+                "home/a.md",
+                "---\ntitle: Alpha\ntags: [x]\n---\n# Alpha\n\ntarget line\n",
+            )],
+        );
         let ws = Workspace::open(&root).unwrap();
         let hits = search(&ws, &Query::new("target")).unwrap();
         assert_eq!(hits[0].matches[0].line, 7);
@@ -222,10 +240,13 @@ mod tests {
 
     #[test]
     fn frontmatter_is_not_searched() {
-        let root = fixture("fm", &[(
-            "home/a.md",
-            "---\ntitle: Alpha\ntags: [knowledge]\n---\n\nbody text\n",
-        )]);
+        let root = fixture(
+            "fm",
+            &[(
+                "home/a.md",
+                "---\ntitle: Alpha\ntags: [knowledge]\n---\n\nbody text\n",
+            )],
+        );
         let ws = Workspace::open(&root).unwrap();
         // `knowledge` appears only as a tag, so it must not register as a body hit.
         assert!(search(&ws, &Query::new("knowledge")).unwrap().is_empty());
@@ -234,10 +255,13 @@ mod tests {
 
     #[test]
     fn a_title_match_counts_and_ranks_first() {
-        let root = fixture("title", &[
-            ("home/a.md", "# Nix flakes\n\nunrelated body\n"),
-            ("home/b.md", "# Other\n\nnix appears in the body\n"),
-        ]);
+        let root = fixture(
+            "title",
+            &[
+                ("home/a.md", "# Nix flakes\n\nunrelated body\n"),
+                ("home/b.md", "# Other\n\nnix appears in the body\n"),
+            ],
+        );
         let ws = Workspace::open(&root).unwrap();
         let hits = search(&ws, &Query::new("nix")).unwrap();
         assert_eq!(hits.len(), 2);
@@ -259,7 +283,14 @@ mod tests {
     fn truncates_matches_but_reports_the_full_count() {
         let root = fixture("trunc", &[("home/a.md", "# T\n\nx\nx\nx\nx\nx\n")]);
         let ws = Workspace::open(&root).unwrap();
-        let hits = search(&ws, &Query { max_matches_per_note: Some(2), ..Query::new("x") }).unwrap();
+        let hits = search(
+            &ws,
+            &Query {
+                max_matches_per_note: Some(2),
+                ..Query::new("x")
+            },
+        )
+        .unwrap();
         assert_eq!(hits[0].matches.len(), 2);
         assert_eq!(hits[0].match_count, 5);
         std::fs::remove_dir_all(&root).unwrap();
@@ -267,12 +298,18 @@ mod tests {
 
     #[test]
     fn filters_by_tag() {
-        let root = fixture("tag", &[
-            ("home/a.md", "---\ntags: [nix]\n---\n# A\n\nterm\n"),
-            ("home/b.md", "---\ntags: [other]\n---\n# B\n\nterm\n"),
-        ]);
+        let root = fixture(
+            "tag",
+            &[
+                ("home/a.md", "---\ntags: [nix]\n---\n# A\n\nterm\n"),
+                ("home/b.md", "---\ntags: [other]\n---\n# B\n\nterm\n"),
+            ],
+        );
         let ws = Workspace::open(&root).unwrap();
-        let query = Query { tags: vec!["nix".into()], ..Query::new("term") };
+        let query = Query {
+            tags: vec!["nix".into()],
+            ..Query::new("term")
+        };
         let hits = search(&ws, &query).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].note.title, "A");
@@ -283,19 +320,28 @@ mod tests {
     fn a_fixed_string_pattern_skips_regex_syntax() {
         let root = fixture("fixed", &[("home/a.md", "# T\n\nliteral a.c here\n")]);
         let ws = Workspace::open(&root).unwrap();
-        let query = Query { fixed_string: true, ..Query::new("a.c") };
+        let query = Query {
+            fixed_string: true,
+            ..Query::new("a.c")
+        };
         assert_eq!(search(&ws, &query).unwrap().len(), 1);
-        let query = Query { fixed_string: true, ..Query::new("abc") };
+        let query = Query {
+            fixed_string: true,
+            ..Query::new("abc")
+        };
         assert!(search(&ws, &query).unwrap().is_empty());
         std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn listing_sorts_newest_first() {
-        let root = fixture("ls", &[
-            ("home/old.md", "---\nupdated: 2026-01-01\n---\n# Old\n"),
-            ("home/new.md", "---\nupdated: 2026-07-01\n---\n# New\n"),
-        ]);
+        let root = fixture(
+            "ls",
+            &[
+                ("home/old.md", "---\nupdated: 2026-01-01\n---\n# Old\n"),
+                ("home/new.md", "---\nupdated: 2026-07-01\n---\n# New\n"),
+            ],
+        );
         let ws = Workspace::open(&root).unwrap();
         let notes = filter_notes(&ws, &Query::default()).unwrap();
         assert_eq!(notes[0].title, "New");

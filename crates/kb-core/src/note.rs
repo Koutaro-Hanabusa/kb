@@ -2,9 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
+use jiff::Zoned;
 use jiff::civil;
 use jiff::tz::TimeZone;
-use jiff::Zoned;
 use serde::Serialize;
 
 use crate::frontmatter::Document;
@@ -42,8 +42,12 @@ impl Note {
             .unwrap_or_else(|| stem(path));
 
         let tags = fm.map(|f| f.tags.clone()).unwrap_or_default();
-        let created = fm.and_then(|f| f.created.as_deref()).and_then(parse_timestamp);
-        let updated = fm.and_then(|f| f.updated.as_deref()).and_then(parse_timestamp);
+        let created = fm
+            .and_then(|f| f.created.as_deref())
+            .and_then(parse_timestamp);
+        let updated = fm
+            .and_then(|f| f.updated.as_deref())
+            .and_then(parse_timestamp);
 
         Self {
             path: path.to_path_buf(),
@@ -156,7 +160,9 @@ fn strip_markup(line: &str) -> String {
 }
 
 fn stem(path: &Path) -> String {
-    path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// Parse an ISO 8601 timestamp, tolerating a date-only or timezone-less value.
@@ -204,7 +210,11 @@ pub fn timestamp_from_filename(path: &Path) -> Option<Zoned> {
     let month: i8 = date[4..6].parse().ok()?;
     let day: i8 = date[6..8].parse().ok()?;
     let (hour, minute, second) = match time {
-        Some(t) => (t[0..2].parse().ok()?, t[2..4].parse().ok()?, t[4..6].parse().ok()?),
+        Some(t) => (
+            t[0..2].parse().ok()?,
+            t[2..4].parse().ok()?,
+            t[4..6].parse().ok()?,
+        ),
         None => (0, 0, 0),
     };
 
@@ -246,7 +256,10 @@ mod tests {
 
     #[test]
     fn prefers_the_frontmatter_title() {
-        let n = note("---\ntitle: From frontmatter\n---\n# From heading\n", "file.md");
+        let n = note(
+            "---\ntitle: From frontmatter\n---\n# From heading\n",
+            "file.md",
+        );
         assert_eq!(n.title, "From frontmatter");
         assert!(n.has_frontmatter);
     }
@@ -260,13 +273,19 @@ mod tests {
 
     #[test]
     fn takes_a_heading_of_any_level() {
-        assert_eq!(note("## Second level\n\ntext\n", "f.md").title, "Second level");
+        assert_eq!(
+            note("## Second level\n\ntext\n", "f.md").title,
+            "Second level"
+        );
         assert_eq!(note("#### Fourth level\n", "f.md").title, "Fourth level");
     }
 
     #[test]
     fn takes_the_first_line_of_prose_when_there_is_no_heading() {
-        let n = note("my first memo from nvim\n\nmore text\n", "20260108203523.md");
+        let n = note(
+            "my first memo from nvim\n\nmore text\n",
+            "20260108203523.md",
+        );
         assert_eq!(n.title, "my first memo from nvim");
     }
 
@@ -279,7 +298,10 @@ mod tests {
 
     #[test]
     fn skips_horizontal_rules() {
-        assert_eq!(note("---\n\n***\n\nreal content\n", "f.md").title, "real content");
+        assert_eq!(
+            note("---\n\n***\n\nreal content\n", "f.md").title,
+            "real content"
+        );
     }
 
     #[test]
@@ -288,12 +310,18 @@ mod tests {
                    SocialLink 型を LucideIcon 固定から汎用化したことで依存を切れた。\
                    さらに長く続く本文がここにある。";
         let n = note(raw, "20260421224448.md");
-        assert_eq!(n.title, "burio.com apps/web の SNS アイコンを自前 SVG コンポーネント化した");
+        assert_eq!(
+            n.title,
+            "burio.com apps/web の SNS アイコンを自前 SVG コンポーネント化した"
+        );
     }
 
     #[test]
     fn breaks_on_an_ascii_colon_only_when_a_space_follows() {
-        let raw = format!("cameraman.8122.jp Upload 納品の調査: 原因は {}", "詳細".repeat(60));
+        let raw = format!(
+            "cameraman.8122.jp Upload 納品の調査: 原因は {}",
+            "詳細".repeat(60)
+        );
         let n = note(&raw, "20260608120623.md");
         // The dots inside the hostname must not read as sentence ends.
         assert_eq!(n.title, "cameraman.8122.jp Upload 納品の調査");
@@ -358,12 +386,18 @@ mod tests {
     /// reading back the filename it chose.
     #[test]
     fn filenames_match_what_nb_produces() {
-        assert_eq!(filename_stem("UPPER lower - dash_under.dot"), "upper_lower_-_dash_under.dot");
+        assert_eq!(
+            filename_stem("UPPER lower - dash_under.dot"),
+            "upper_lower_-_dash_under.dot"
+        );
         assert_eq!(
             filename_stem("symbols: ! @ # / \\ ? * & (paren) [br] 100%"),
             "symbols__!_@_#_________&_(paren)_[br]_100%"
         );
-        assert_eq!(filename_stem("  leading and trailing  "), "leading_and_trailing");
+        assert_eq!(
+            filename_stem("  leading and trailing  "),
+            "leading_and_trailing"
+        );
         assert_eq!(
             filename_stem("日本語UIライティング - 句点のルール"),
             "日本語uiライティング_-_句点のルール"
