@@ -60,6 +60,10 @@ struct NewArgs {
     #[arg(short, long, value_name = "TAG")]
     tag: Vec<String>,
 
+    /// Body text, or `-` to read it from stdin (implies --no-edit)
+    #[arg(short, long, value_name = "TEXT")]
+    content: Option<String>,
+
     /// Print the path instead of opening an editor
     #[arg(long)]
     no_edit: bool,
@@ -282,15 +286,28 @@ fn run_new(workspace: &Workspace, args: &NewArgs, out: &mut impl Write) -> Resul
         None => workspace.default_notebook()?,
     };
 
+    let body = match args.content.as_deref() {
+        Some("-") => {
+            let mut text = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)
+                .context("reading the note body from stdin")?;
+            Some(text)
+        }
+        other => other.map(str::to_string),
+    };
+
     let spec = kb_core::NewNote {
         title: args.title.clone(),
         dir: args.dir.clone(),
         tags: args.tag.clone(),
+        body,
     };
     let path = kb_core::create::create(notebook, &spec, &jiff::Zoned::now())?;
     writeln!(out, "{}", path.display())?;
 
-    if !args.no_edit {
+    // Supplying content means the note is already written; opening an editor
+    // would just get in the way of a script.
+    if !args.no_edit && args.content.is_none() {
         out.flush()?;
         launch(&editor(), &path)?;
     }

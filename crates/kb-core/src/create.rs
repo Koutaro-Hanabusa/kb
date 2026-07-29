@@ -16,11 +16,13 @@ pub struct NewNote {
     /// Directory within the notebook, e.g. `knowledge`.
     pub dir: String,
     pub tags: Vec<String>,
+    /// Body text. `None` writes a heading and nothing else.
+    pub body: Option<String>,
 }
 
 impl NewNote {
     pub fn new(title: impl Into<String>, dir: impl Into<String>) -> Self {
-        Self { title: title.into(), dir: dir.into(), tags: Vec::new() }
+        Self { title: title.into(), dir: dir.into(), tags: Vec::new(), body: None }
     }
 
     /// Tags to write: the ones given, or the directory name as a default so new
@@ -47,11 +49,16 @@ pub fn create(notebook: &Notebook, spec: &NewNote, now: &Zoned) -> Result<PathBu
 
     let path = available_path(&dir, &slugify(&spec.title));
     let stamp = format_timestamp(now);
+    // A supplied body is written as-is; it may already open with its own
+    // heading, and second-guessing that would mangle piped-in content.
+    let body = match spec.body.as_deref().map(str::trim) {
+        Some(text) if !text.is_empty() => format!("{text}\n"),
+        _ => format!("# {}\n", spec.title),
+    };
     let contents = format!(
-        "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n# {}\n\n",
+        "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{body}",
         yaml_scalar(&spec.title),
         yaml_tags(&spec.effective_tags()),
-        spec.title,
     );
     std::fs::write(&path, contents)
         .with_context(|| format!("writing {}", path.display()))?;
@@ -108,6 +115,33 @@ mod tests {
         assert_ne!(first, second);
         assert!(second.to_string_lossy().ends_with("same-title-2.md"));
         assert!(first.exists());
+        std::fs::remove_dir_all(&nb.root).unwrap();
+    }
+
+    #[test]
+    fn writes_a_supplied_body_verbatim() {
+        let nb = notebook("body");
+        let spec = NewNote {
+            body: Some("## 背景\n\n本文がここにある。\n".into()),
+            ..NewNote::new("記録", "knowledge")
+        };
+        let path = create(&nb, &spec, &Zoned::now()).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+
+        assert!(raw.ends_with("## 背景\n\n本文がここにある。\n"));
+        // The frontmatter title stands on its own; no heading is injected above
+        // a body that already has one.
+        assert!(!raw.contains("# 記録\n"));
+        assert_eq!(nb.read(&path).unwrap().title, "記録");
+        std::fs::remove_dir_all(&nb.root).unwrap();
+    }
+
+    #[test]
+    fn an_empty_body_falls_back_to_a_heading() {
+        let nb = notebook("emptybody");
+        let spec = NewNote { body: Some("   \n".into()), ..NewNote::new("見出しだけ", "knowledge") };
+        let path = create(&nb, &spec, &Zoned::now()).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().ends_with("# 見出しだけ\n"));
         std::fs::remove_dir_all(&nb.root).unwrap();
     }
 
