@@ -26,9 +26,11 @@
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
 
-          # `kb open` shells out to these; they stay runtime lookups on PATH
-          # rather than build inputs so the binary works with whatever the user
-          # already has installed.
+          # The git module's tests build throwaway repositories, so the sandbox
+          # needs git. Runtime lookups (git, fzf, glow) stay on PATH so the
+          # binary uses whatever the user already has.
+          nativeCheckInputs = [ pkgs.git ];
+
           meta = {
             description = "A fast Markdown knowledge base";
             mainProgram = "kb";
