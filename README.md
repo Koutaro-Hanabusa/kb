@@ -1,23 +1,91 @@
 # kb
 
-A fast Markdown knowledge base — search, list, and write notes stored as plain
-files in git repositories.
+A fast Markdown knowledge base. Notes are plain files in git repositories, and
+`kb` speaks [`nb`](https://github.com/xwmx/nb)'s command language — same
+subcommands, same aliases, same ids, same file formats — while being roughly two
+orders of magnitude faster.
 
-## Why
+```sh
+kb search "AI Search"       # full-text across every notebook, in ~16 ms
+kb 3                        # show item 3
+kb home:knowledge/12        # scope to a notebook and folder
+kb new -t "Title" --folder knowledge --content - <<< "body"
+kb open knowledge/          # pick with fzf, preview with glow, edit
+kb sync                     # commit Markdown, pull, push
+```
 
-`kb` replaces [`nb`](https://github.com/xwmx/nb), which is a 27,000-line Bash
-script. Measured over the same 787 notes (13.5 MB):
+## Install
 
-| Command | `nb` | `kb` |
-| --- | ---: | ---: |
-| startup only (`--version`) | 0.42 s | 0.017 s |
-| list a notebook | 3.28 s | 0.073 s |
-| search a notebook | 18.5 s | **0.090 s** |
+### Nix flake (how it is used here)
 
-The data was never the problem. `nb` forks `git`, `sed`, and `awk` per note, so
-searching spent its time waiting on processes rather than reading text — its CPU
-usage during that 18.5 s search was 38%. `kb` reads each file once and scans it
-with ripgrep's matcher.
+Add it as an input and put the package on your path:
+
+```nix
+# flake.nix
+inputs.kb = {
+  url = "github:Koutaro-Hanabusa/kb";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+
+# home-manager
+home.packages = [ kb.packages.${system}.default ];
+```
+
+Update with `nix flake update kb`.
+
+### Cargo
+
+```sh
+cargo install --git https://github.com/Koutaro-Hanabusa/kb kb-cli
+```
+
+### From source
+
+```sh
+git clone https://github.com/Koutaro-Hanabusa/kb && cd kb
+cargo build --release      # target/release/kb
+cargo test
+```
+
+Nothing else is required to run. `git` is needed for `sync`, `status`, and
+`history`; `fzf`, `glow`, `bat`, `openssl`, and `gpg` are used when present and
+skipped when not. `kb env --long` reports which of them it found.
+
+### First run
+
+Point `kb` at an existing `nb` knowledge base and it just works — same layout,
+same ids:
+
+```sh
+kb ls                       # ~/.nb by default, or $KB_ROOT
+```
+
+Starting fresh instead:
+
+```sh
+kb init                     # creates ~/.nb/home as a git repository
+```
+
+## Speed
+
+Measured on 811 notes / 13.5 MB, macOS, warm cache. `kb` is the mean of 50 runs;
+`nb` is a single run because at these times it does not need averaging.
+
+| | `nb` 7.25.4 | `kb` | |
+| --- | ---: | ---: | ---: |
+| startup only (`--version`) | 0.30 s | **0.013 s** | 23× |
+| list one notebook | 1.04 s | **0.016 s** | 65× |
+| search one notebook | 8.21 s | **0.016 s** | **513×** |
+
+The data was never the problem — 13.5 MB is nothing. `nb` is a 27,000-line Bash
+script that reparses itself on every invocation (hence the 0.3 s floor) and forks
+`git`, `sed`, and `awk` per note while searching. During an 18.5 s search its CPU
+usage was 38%: it was waiting on processes, not reading text. `kb` reads each
+file once and scans it with ripgrep's matcher.
+
+There is no index and no database. Every command walks the tree. At the size a
+personal knowledge base reaches, an index would cost more in bookkeeping than it
+saves.
 
 ## Layout
 
@@ -26,61 +94,98 @@ Markdown, normally a git repository:
 
 ```
 ~/.nb/                  # or $KB_ROOT
+├── .current            # notebook selected by `kb use`
 ├── home/               # a notebook
-│   └── knowledge/*.md
+│   ├── .index          # ids for this directory
+│   └── knowledge/
+│       ├── .index
+│       └── *.md
 └── work/
-    └── knowledge/*.md
 ```
-
-Notes carry YAML frontmatter:
-
-```yaml
----
-title: Cloudflare で nb データの RAG を構築する設計パターン
-tags: [knowledge]
-created: 2026-04-20T13:34:09+09:00
-updated: 2026-07-17T09:12:44+09:00
----
-```
-
-There is no index and no database. Every command walks the tree, which stays in
-the tens of milliseconds at the sizes a personal knowledge base reaches.
 
 ## Compatibility with `nb`
 
-`kb` implements `nb`'s command surface, so existing habits and scripts carry
-over. Every `nb` subcommand resolves, with the same short aliases.
+Existing habits, scripts, and notebooks carry over. Every `nb` subcommand
+resolves, with the same short aliases.
 
 **Item references.** Commands take `[<notebook>:][<folder>/]<id|filename|title>`:
 
 ```sh
-kb 3                     # show item 3 in the current notebook
-kb home:knowledge/12     # scope to a notebook and folder
-kb show "My Note Title"  # or name it by title
+kb 3                     # item 3 in the current notebook
+kb home:knowledge/12     # scoped to a notebook and folder
+kb show "My Note Title"  # or named by title
 kb                       # no argument lists the current notebook
 ```
 
 Ids come from the `.index` file in each directory: an item's id is its line
 number. Deleting an item blanks its line rather than removing it, so ids are
 never reused and a reference written down last year still points at the same
-note — the same guarantee `nb` gives.
+note. Verified against `nb` itself, including the gaps.
 
 **Filenames.** A title becomes a filename the way `nb` does it: lowercase ASCII,
-with whitespace and `: / \ ? *` replaced by underscores, everything else left
-alone. `日本語UIライティング - 句点のルール` → `日本語uiライティング_-_句点のルール.md`.
+whitespace and `: / \ ? *` replaced by underscores, everything else left alone.
+`日本語UIライティング - 句点のルール` → `日本語uiライティング_-_句点のルール.md`.
 
-**Files.** Notes are Markdown, bookmarks are `*.bookmark.md`, todos are
-`*.todo.md` with a `# [ ]` / `# [x]` heading, encrypted items are `*.enc`
-(OpenSSL AES-256, or GPG when configured). Pinned entries live in `.pindex`,
-archived notebooks carry `.archived`, and settings go in `.nbrc` as
-`export NB_NAME="${NB_NAME:-value}"` — which means one config file serves both
-tools, in both directions.
+**Files.** Notes are Markdown; bookmarks are `*.bookmark.md`; todos are
+`*.todo.md` with a `# [ ]` / `# [x]` heading; encrypted items are `*.enc`
+(OpenSSL AES-256 with `-md sha256`, or GPG when configured). Pinned entries live
+in `.pindex`, archived notebooks carry `.archived`. A note encrypted by `kb`
+decrypts with `nb` and the reverse, verified both ways.
+
+**Settings.** `kb` reads `~/.kbrc` and falls back to `~/.nbrc`, in the same
+`export NAME="${NAME:-value}"` shell format, with the same twelve setting names.
+Both files are *sourced*, not parsed, so they can branch at run time.
+
+## Differences from `nb`
+
+### Additions
+
+- **Frontmatter.** Notes carry `title` / `tags` / `created` / `updated`, so
+  listings sort by date and filters work on metadata. `nb` reads these files
+  unchanged — it just ignores the header.
+- **`kb migrate`** — backfill frontmatter onto notes that predate it. Insertion
+  only: it never rewrites prose.
+- **`kb tags`** — every tag and how many notes carry it.
+- **`kb pick`** — choose a note with fzf and a `glow` preview. `kb open` and
+  `kb peek` do the same when given a folder.
+- **`kb reconcile`** — rebuild `.index` from what is actually on disk.
+- **`--json`** on `search` and `ls`.
+- **Shared filters** — `-n/--notebook`, `-t/--tag`, `-s/--since 7d`, `--limit`
+  work across the commands that select sets of notes.
+
+### Not implemented
+
+The subcommands are all there; some of their sub-subcommands are not.
+
+| Area | Missing |
+| --- | --- |
+| `notebooks` | `author`, `init`, `select`, `show`, `use` (use the top-level `kb use`) |
+| `remote` | `branches`, `delete`, `rename`, `reset` (only `set` / `remove`) |
+| `import` / `export` | `notebook`, and `export pandoc` — files only, no format conversion |
+| `settings` | `colors` (colour themes are not implemented) |
+| `browse` | `add` / `delete` / `edit` as CLI subcommands — the web UI has all three |
+| `env` | `install` / `update` (no bundled web assets to fetch) |
+| `completions` | `install` / `uninstall` — `kb completions <shell>` prints, you place it |
+| `plugins` | installing from a URL; local paths only |
+
+### Behavioural differences
+
+- **`browse`** is a smaller web application. It renders notes, resolves
+  `[[wiki links]]` and `#tags`, searches, and offers add / edit / delete — but it
+  is not a reimplementation of `nb`'s 677-line embedded UI.
+- **`kb open <folder>`** opens the fzf picker and then your editor. `nb` reaches
+  for a file browser (`ranger`, `mc`, …). `kb show <folder>` still lists.
+- **No terminal, no editor.** `kb` checks for a tty before launching `$EDITOR`
+  and reports the path instead of hanging an automated session.
+- **`kb sync`** stages Markdown only, and refuses to commit when something else
+  is already staged, rather than sweeping it in.
+- **Colour output** is minimal: paths, titles, and line numbers. No themes.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `add` (`a`, `new`, `+`) | Create a note; a bare argument is a filename if it has an extension, else content |
+| `add` (`a`, `new`, `+`) | Create a note. A bare argument is a path if it contains `/` or has an extension, else content |
 | `ls` / `list` | List items |
 | `search` (`q`, `grep`) | Search note bodies. Regex by default, smart case |
 | `show` (`s`) / `peek` (`p`) / `open` (`o`) | Display an item, or hand it to the system |
@@ -89,13 +194,13 @@ tools, in both directions.
 | `bookmark` (`bm`) | Bookmark a URL, fetching its title |
 | `todo` (`todos`, `tasks`) / `do` / `undo` | Todos and their checkboxes |
 | `pin` / `unpin` / `archive` / `unarchive` | Ordering and notebook state |
-| `browse` | The embedded web app: render notes, follow `[[links]]` and `#tags` |
+| `browse` | The embedded web app |
 | `notebooks` / `use` (`u`) / `count` / `folders` | Notebooks and structure |
 | `sync` / `status` / `git` / `history` / `remote` | Git |
 | `settings` / `set` / `unset` / `env` | Configuration |
 | `plugins` | Install and run `*.kb-plugin` / `*.nb-plugin` |
 | `import` / `export` / `run` / `shell` / `completions` | Odds and ends |
-| `migrate` / `pick` / `tags` / `reconcile` | `kb` additions (see below) |
+| `migrate` / `pick` / `tags` / `reconcile` | Additions (see above) |
 
 Filters shared by the commands that select sets of notes:
 
@@ -109,20 +214,10 @@ Filters shared by the commands that select sets of notes:
 `search` also takes `-F` (literal), `-i`/`-s` (case), `-m` (matches per note),
 `-l` (paths only), and `--json`.
 
-### Beyond `nb`
-
-- **`migrate`** — backfill frontmatter onto notes that predate it
-- **`tags`** — every tag and how many notes carry it
-- **`pick`** — choose a note with fzf and a `glow` preview
-- **`reconcile`** — rebuild `.index` from what is actually on disk
-- **Frontmatter** — notes carry `title` / `tags` / `created` / `updated`, so
-  listings sort by date and filters work on metadata. `nb` reads these files
-  unchanged; it just ignores the header.
-
 ### Migration
 
 `kb migrate` adds `title`, `tags`, `created`, and `updated` to notes that lack
-them. It derives each field mechanically:
+them, deriving each field mechanically:
 
 - **title** — the first heading or line of prose, condensed at the first
   sentence break if it runs long; the filename as a last resort
@@ -130,16 +225,17 @@ them. It derives each field mechanically:
 - **created** — an `nb`-style timestamp filename, else the first commit
 - **updated** — the last commit touching the file
 
-It never rewrites prose. Existing frontmatter keys are left byte-for-byte
-intact and only missing ones are appended, so the diff is pure insertion. The
-run is a preview until you pass `--apply`, and it refuses a dirty working tree
-unless you pass `--allow-dirty`.
+It never rewrites prose. Existing frontmatter keys are left byte-for-byte intact
+and only missing ones are appended, so the diff is pure insertion. The run is a
+preview until you pass `--apply`, and it refuses a dirty working tree unless you
+pass `--allow-dirty`. Migrating 797 notes here produced 5,569 insertions and zero
+deletions.
 
 ## Configuration
 
-Settings live in `.nbrc` at the knowledge base root and are managed with
-`kb settings`, `kb set`, and `kb unset`. The file is the one `nb` uses, in the
-same format, so either tool can read what the other wrote.
+Settings live in `~/.kbrc` and are managed with `kb settings`, `kb set`, and
+`kb unset`. `~/.nbrc` is read as a fallback, so an existing `nb` configuration
+keeps working; `kb` writes only to its own file.
 
 ```sh
 kb settings list          # every setting and its value
@@ -147,24 +243,31 @@ kb set default_extension org
 kb set 5                  # settings can be named or numbered
 ```
 
+The file is sourced, so it can decide at run time:
+
+```bash
+# ~/.kbrc
+if [[ -n "${CLAUDECODE:-}" ]]; then
+  export KB_EDITOR="cat"   # never block on an editor in an automated session
+else
+  export KB_EDITOR="nvim"
+fi
+```
+
 Environment variables take precedence over the file:
 
 | Variable | Effect |
 | --- | --- |
-| `KB_ROOT` / `NB_DIR` | Knowledge base location (default `~/.nb`) |
+| `KB_ROOT` | Knowledge base location (default `~/.nb`) |
 | `KB_NOTEBOOK` | Notebook for new notes |
-| `NBRC_PATH` | Settings file location |
-| `NB_*` | Any setting, e.g. `NB_ENCRYPTION_TOOL=gpg` |
+| `KBRC_PATH` / `NBRC_PATH` | Settings file locations |
+| `KB_*` / `NB_*` | Any setting, e.g. `KB_ENCRYPTION_TOOL=gpg` |
 | `NO_COLOR` | Disable ANSI styling |
 
 Without `KB_NOTEBOOK`, commands act on the notebook `kb use` selected; failing
-that, `work` when `~/.is_work_pc` exists and `home` otherwise — work and
-personal notes live in separate repositories, and putting one in the other is
-tedious to undo.
-
-External tools are looked up on `PATH` and used when present: `git` (required
-for sync and history), `fzf` (`pick`), `glow` or `bat` (rendering), `openssl` or
-`gpg` (encryption).
+that, `work` when `~/.is_work_pc` exists and `home` otherwise — work and personal
+notes live in separate repositories, and putting one in the other is tedious to
+undo.
 
 ## Structure
 
@@ -174,25 +277,18 @@ for sync and history), `fzf` (`pick`), `glow` or `bat` (rendering), `openssl` or
 
 Both the CLI and the `browse` web application are thin shells over `kb-core`.
 
-## Build
-
-```sh
-cargo build --release   # target/release/kb
-cargo test
-```
-
 ## Licence and attribution
 
 `kb` is licensed under the **GNU Affero General Public License v3.0 or later**
 (see [LICENSE](LICENSE)).
 
 It reimplements the command surface of [`nb`](https://github.com/xwmx/nb) by
-William Melody, which is itself AGPLv3. No `nb` code was copied — `kb` is
-written from scratch in Rust — but it deliberately reproduces `nb`'s commands,
+William Melody, which is itself AGPLv3. No `nb` code was copied — `kb` is written
+from scratch in Rust — but it deliberately reproduces `nb`'s commands,
 identifiers, and on-disk formats so the two interoperate, and one detail (the
 exact OpenSSL invocation used for encrypted notes, needed to decrypt existing
 `.enc` files) was taken from reading `nb`'s source. `kb` is therefore licensed
 under the same terms as the work it is compatible with.
 
-Thanks to William Melody for `nb`, which this replaces only because 787 notes
+Thanks to William Melody for `nb`, which this replaces only because 811 notes
 made its startup cost impossible to ignore.
