@@ -17,16 +17,21 @@ pub const PINDEX_FILE: &str = ".pindex";
 pub const ARCHIVED_FILE: &str = ".archived";
 
 pub fn is_todo(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|name| name.to_string_lossy().to_ascii_lowercase().ends_with(TODO_EXT))
+    path.file_name().is_some_and(|name| {
+        name.to_string_lossy()
+            .to_ascii_lowercase()
+            .ends_with(TODO_EXT)
+    })
 }
 
 /// Render a new todo.
 pub fn render(task: &str, tags: &[String]) -> String {
     let mut out = format!("# [ ] {task}\n");
     if !tags.is_empty() {
-        let tags: Vec<String> =
-            tags.iter().map(|tag| format!("#{}", tag.trim_start_matches('#'))).collect();
+        let tags: Vec<String> = tags
+            .iter()
+            .map(|tag| format!("#{}", tag.trim_start_matches('#')))
+            .collect();
         out.push_str(&format!("\n## Tags\n\n{}\n", tags.join(" ")));
     }
     out
@@ -83,7 +88,11 @@ pub fn pinned(dir: &Path) -> Vec<String> {
     let Ok(raw) = std::fs::read_to_string(dir.join(PINDEX_FILE)) else {
         return Vec::new();
     };
-    raw.lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect()
+    raw.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 pub fn is_pinned(dir: &Path, name: &str) -> bool {
@@ -110,8 +119,7 @@ fn write_pindex(dir: &Path, entries: &[String]) -> Result<()> {
     if entries.is_empty() {
         // An empty pindex is the same as none; leaving one behind would be litter.
         if path.exists() {
-            std::fs::remove_file(&path)
-                .with_context(|| format!("removing {}", path.display()))?;
+            std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
         }
         return Ok(());
     }
@@ -134,8 +142,7 @@ pub fn archive(notebook_root: &Path) -> Result<()> {
 pub fn unarchive(notebook_root: &Path) -> Result<()> {
     let path = notebook_root.join(ARCHIVED_FILE);
     if path.exists() {
-        std::fs::remove_file(&path)
-            .with_context(|| format!("removing {}", path.display()))?;
+        std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
     }
     Ok(())
 }
@@ -144,8 +151,14 @@ pub fn unarchive(notebook_root: &Path) -> Result<()> {
 pub fn sort_pinned_first(dir: &Path, paths: &mut [PathBuf]) {
     let pinned = pinned(dir);
     let rank = |path: &PathBuf| {
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        pinned.iter().position(|entry| *entry == name).unwrap_or(usize::MAX)
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        pinned
+            .iter()
+            .position(|entry| *entry == name)
+            .unwrap_or(usize::MAX)
     };
     paths.sort_by_key(rank);
 }
@@ -183,7 +196,10 @@ mod tests {
     #[test]
     fn flipping_leaves_the_rest_of_the_note_alone() {
         let raw = "# [ ] タスク\n\n## Tags\n\n#work\n";
-        assert_eq!(set_done(raw, true).unwrap(), "# [x] タスク\n\n## Tags\n\n#work\n");
+        assert_eq!(
+            set_done(raw, true).unwrap(),
+            "# [x] タスク\n\n## Tags\n\n#work\n"
+        );
     }
 
     #[test]
@@ -254,7 +270,10 @@ mod tests {
         assert!(!is_archived(&dir));
         archive(&dir).unwrap();
         assert!(is_archived(&dir));
-        assert_eq!(std::fs::read_to_string(dir.join(ARCHIVED_FILE)).unwrap(), "");
+        assert_eq!(
+            std::fs::read_to_string(dir.join(ARCHIVED_FILE)).unwrap(),
+            ""
+        );
 
         unarchive(&dir).unwrap();
         assert!(!is_archived(&dir));

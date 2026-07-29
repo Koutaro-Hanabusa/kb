@@ -48,13 +48,21 @@ impl<'a> Document<'a> {
         let offset = raw.len() - text.len();
 
         let Some((yaml, span)) = locate_block(text) else {
-            return Self { frontmatter: None, span: None, body: raw };
+            return Self {
+                frontmatter: None,
+                span: None,
+                body: raw,
+            };
         };
         // A body that opens with a horizontal rule or a setext heading can look
         // like a frontmatter block. Only YAML that actually parses as a mapping
         // counts, which rules those out.
         let Some(frontmatter) = parse(yaml) else {
-            return Self { frontmatter: None, span: None, body: raw };
+            return Self {
+                frontmatter: None,
+                span: None,
+                body: raw,
+            };
         };
 
         Self {
@@ -72,7 +80,10 @@ fn locate_block(text: &str) -> Option<(&str, Range<usize>)> {
     let mut cursor = after_open;
 
     loop {
-        let line_end = text[cursor..].find('\n').map(|i| cursor + i + 1).unwrap_or(text.len());
+        let line_end = text[cursor..]
+            .find('\n')
+            .map(|i| cursor + i + 1)
+            .unwrap_or(text.len());
         let line = text[cursor..line_end].trim_end_matches(['\n', '\r']);
         if line.trim_end() == "---" || line.trim_end() == "..." {
             return Some((&text[after_open..cursor], 0..line_end));
@@ -269,7 +280,10 @@ mod tests {
 
     #[test]
     fn quotes_only_what_yaml_would_misread() {
-        assert_eq!(yaml_scalar("Cloudflare で RAG を構築する"), "Cloudflare で RAG を構築する");
+        assert_eq!(
+            yaml_scalar("Cloudflare で RAG を構築する"),
+            "Cloudflare で RAG を構築する"
+        );
         assert_eq!(yaml_scalar("nb: 遅い"), "\"nb: 遅い\"");
         assert_eq!(yaml_scalar("- leading dash"), "\"- leading dash\"");
         assert_eq!(yaml_scalar("true"), "\"true\"");

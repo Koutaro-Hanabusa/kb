@@ -14,7 +14,11 @@ pub struct Theme {
 }
 
 /// The theme used when nothing is configured — `nb`'s own default colours.
-pub const DEFAULT: Theme = Theme { name: "nb", primary: 69, secondary: 8 };
+pub const DEFAULT: Theme = Theme {
+    name: "nb",
+    primary: 69,
+    secondary: 8,
+};
 
 /// Every built-in theme, in the order `settings colors themes` lists them.
 ///
@@ -22,25 +26,81 @@ pub const DEFAULT: Theme = Theme { name: "nb", primary: 69, secondary: 8 };
 /// from its own listing; they are accepted here and left out of the list for the
 /// same reason.
 pub const THEMES: [Theme; 11] = [
-    Theme { name: "blacklight", primary: 39, secondary: 56 },
-    Theme { name: "console", primary: 40, secondary: 28 },
-    Theme { name: "desert", primary: 179, secondary: 95 },
-    Theme { name: "electro", primary: 200, secondary: 62 },
-    Theme { name: "forest", primary: 29, secondary: 59 },
+    Theme {
+        name: "blacklight",
+        primary: 39,
+        secondary: 56,
+    },
+    Theme {
+        name: "console",
+        primary: 40,
+        secondary: 28,
+    },
+    Theme {
+        name: "desert",
+        primary: 179,
+        secondary: 95,
+    },
+    Theme {
+        name: "electro",
+        primary: 200,
+        secondary: 62,
+    },
+    Theme {
+        name: "forest",
+        primary: 29,
+        secondary: 59,
+    },
     DEFAULT,
-    Theme { name: "ocean", primary: 75, secondary: 26 },
-    Theme { name: "raspberry", primary: 162, secondary: 90 },
-    Theme { name: "smoke", primary: 248, secondary: 241 },
-    Theme { name: "unicorn", primary: 183, secondary: 153 },
-    Theme { name: "utility", primary: 227, secondary: 8 },
+    Theme {
+        name: "ocean",
+        primary: 75,
+        secondary: 26,
+    },
+    Theme {
+        name: "raspberry",
+        primary: 162,
+        secondary: 90,
+    },
+    Theme {
+        name: "smoke",
+        primary: 248,
+        secondary: 241,
+    },
+    Theme {
+        name: "unicorn",
+        primary: 183,
+        secondary: 153,
+    },
+    Theme {
+        name: "utility",
+        primary: 227,
+        secondary: 8,
+    },
 ];
 
 /// Themes `nb` understands but does not advertise.
 const UNLISTED: [Theme; 4] = [
-    Theme { name: "lavender", primary: 183, secondary: 61 },
-    Theme { name: "mage", primary: 199, secondary: 55 },
-    Theme { name: "mint", primary: 43, secondary: 60 },
-    Theme { name: "monochrome", primary: 248, secondary: 241 },
+    Theme {
+        name: "lavender",
+        primary: 183,
+        secondary: 61,
+    },
+    Theme {
+        name: "mage",
+        primary: 199,
+        secondary: 55,
+    },
+    Theme {
+        name: "mint",
+        primary: 43,
+        secondary: 60,
+    },
+    Theme {
+        name: "monochrome",
+        primary: 248,
+        secondary: 241,
+    },
 ];
 
 impl Theme {
@@ -58,11 +118,7 @@ impl Theme {
 ///
 /// `color_primary` and `color_secondary` win over the theme, so a theme can be
 /// adopted and then adjusted — the same layering `nb` uses.
-pub fn resolve(
-    theme_name: Option<&str>,
-    primary: Option<&str>,
-    secondary: Option<&str>,
-) -> Theme {
+pub fn resolve(theme_name: Option<&str>, primary: Option<&str>, secondary: Option<&str>) -> Theme {
     let mut theme = theme_name.and_then(Theme::by_name).unwrap_or(DEFAULT);
     if let Some(colour) = primary.and_then(parse_colour) {
         theme.primary = colour;

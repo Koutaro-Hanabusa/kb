@@ -68,7 +68,10 @@ impl Settings {
     pub fn load() -> Result<Self> {
         let mut values = read_values(&nb_rc_path());
         values.extend(read_values(&rc_path()));
-        Ok(Self { path: rc_path(), values })
+        Ok(Self {
+            path: rc_path(),
+            values,
+        })
     }
 
     /// Load from an explicit path.
@@ -109,7 +112,9 @@ impl Settings {
 
     /// Every set value, in name order.
     pub fn entries(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.values.iter().map(|(name, value)| (name.as_str(), value.as_str()))
+        self.values
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
     }
 
     fn save(&self) -> Result<()> {
@@ -118,8 +123,7 @@ impl Settings {
             let key = env_key(name);
             out.push_str(&format!("\nexport {key}=\"${{{key}:-{value}}}\"\n"));
         }
-        std::fs::write(&self.path, out)
-            .with_context(|| format!("writing {}", self.path.display()))
+        std::fs::write(&self.path, out).with_context(|| format!("writing {}", self.path.display()))
     }
 }
 
@@ -153,11 +157,15 @@ pub fn nb_rc_path() -> PathBuf {
 }
 
 fn home_dir() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default()
 }
 
 fn read_values(path: &Path) -> BTreeMap<String, String> {
-    std::fs::read_to_string(path).map(|raw| parse(&raw)).unwrap_or_default()
+    std::fs::read_to_string(path)
+        .map(|raw| parse(&raw))
+        .unwrap_or_default()
 }
 
 /// The variables the rc files export, obtained by sourcing them in a shell.
@@ -167,8 +175,10 @@ fn read_values(path: &Path) -> BTreeMap<String, String> {
 /// would miss that; running them is the only way to get the answer they mean.
 /// `.nbrc` is sourced first so `.kbrc` can override it.
 pub fn shell_environment() -> BTreeMap<String, String> {
-    let files: Vec<PathBuf> =
-        [nb_rc_path(), rc_path()].into_iter().filter(|path| path.exists()).collect();
+    let files: Vec<PathBuf> = [nb_rc_path(), rc_path()]
+        .into_iter()
+        .filter(|path| path.exists())
+        .collect();
     if files.is_empty() {
         return BTreeMap::new();
     }
@@ -179,7 +189,11 @@ pub fn shell_environment() -> BTreeMap<String, String> {
         .collect();
     let script = format!("{}; env", sources.join("; "));
 
-    let Ok(output) = std::process::Command::new("sh").arg("-c").arg(script).output() else {
+    let Ok(output) = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .output()
+    else {
         return BTreeMap::new();
     };
 
@@ -203,7 +217,10 @@ fn validate(name: &str) -> Result<()> {
 }
 
 fn normalise(name: &str) -> String {
-    name.trim().to_ascii_lowercase().trim_start_matches("nb_").to_string()
+    name.trim()
+        .to_ascii_lowercase()
+        .trim_start_matches("nb_")
+        .to_string()
 }
 
 fn env_key(name: &str) -> String {
@@ -219,10 +236,18 @@ fn parse(raw: &str) -> BTreeMap<String, String> {
     let mut values = BTreeMap::new();
     for line in raw.lines() {
         let line = line.trim();
-        let Some(rest) = line.strip_prefix("export ") else { continue };
+        let Some(rest) = line.strip_prefix("export ") else {
+            continue;
+        };
         // Drop the trailing `# Set by ...` comment before parsing.
-        let rest = rest.split_once(" #").map(|(head, _)| head).unwrap_or(rest).trim();
-        let Some((key, value)) = rest.split_once('=') else { continue };
+        let rest = rest
+            .split_once(" #")
+            .map(|(head, _)| head)
+            .unwrap_or(rest)
+            .trim();
+        let Some((key, value)) = rest.split_once('=') else {
+            continue;
+        };
         let Some(name) = key.strip_prefix("KB_").or_else(|| key.strip_prefix("NB_")) else {
             continue;
         };
@@ -261,7 +286,10 @@ export NB_DEFAULT_EXTENSION=\"${NB_DEFAULT_EXTENSION:-org}\" # Set by `nb` • W
 export NB_LIMIT=\"${NB_LIMIT:-30}\" # Set by `nb` • Wed Jul 29 13:33:45 JST 2026
 ";
         let values = parse(raw);
-        assert_eq!(values.get("default_extension").map(String::as_str), Some("org"));
+        assert_eq!(
+            values.get("default_extension").map(String::as_str),
+            Some("org")
+        );
         assert_eq!(values.get("limit").map(String::as_str), Some("30"));
     }
 
@@ -311,8 +339,14 @@ export NB_LIMIT=\"${NB_LIMIT:-30}\" # Set by `nb` • Wed Jul 29 13:33:45 JST 20
     #[test]
     fn settings_resolve_by_name_or_number() {
         assert_eq!(resolve_name("5").unwrap(), "default_extension");
-        assert_eq!(resolve_name("default_extension").unwrap(), "default_extension");
-        assert_eq!(resolve_name("NB_DEFAULT_EXTENSION").unwrap(), "default_extension");
+        assert_eq!(
+            resolve_name("default_extension").unwrap(),
+            "default_extension"
+        );
+        assert_eq!(
+            resolve_name("NB_DEFAULT_EXTENSION").unwrap(),
+            "default_extension"
+        );
         assert!(resolve_name("99").is_err());
         assert!(resolve_name("not_a_setting").is_err());
     }

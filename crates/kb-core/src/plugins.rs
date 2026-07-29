@@ -55,7 +55,9 @@ pub fn installed(root: &Path) -> Vec<Plugin> {
 
 /// Find the plugin providing `name`.
 pub fn find(root: &Path, name: &str) -> Option<Plugin> {
-    installed(root).into_iter().find(|plugin| plugin.name == name && !plugin.is_theme())
+    installed(root)
+        .into_iter()
+        .find(|plugin| plugin.name == name && !plugin.is_theme())
 }
 
 /// The subcommand name a plugin file provides.
@@ -71,25 +73,33 @@ pub fn install(root: &Path, source: &Path, force: bool) -> Result<Plugin> {
         format!(
             "{} is not a plugin (expected one of: {})",
             source.display(),
-            PLUGIN_EXTS.iter().map(|e| format!(".{e}")).collect::<Vec<_>>().join(", ")
+            PLUGIN_EXTS
+                .iter()
+                .map(|e| format!(".{e}"))
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     })?;
 
     let dir = directory(root);
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("creating {}", dir.display()))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
     let file_name = source.file_name().context("plugin has no filename")?;
     let destination = dir.join(file_name);
     if destination.exists() && !force {
-        bail!("already installed: {} (pass --force to replace)", destination.display());
+        bail!(
+            "already installed: {} (pass --force to replace)",
+            destination.display()
+        );
     }
 
-    std::fs::copy(source, &destination)
-        .with_context(|| format!("copying {}", source.display()))?;
+    std::fs::copy(source, &destination).with_context(|| format!("copying {}", source.display()))?;
     make_executable(&destination)?;
 
-    Ok(Plugin { name, path: destination })
+    Ok(Plugin {
+        name,
+        path: destination,
+    })
 }
 
 /// Download a plugin and install it.
@@ -106,7 +116,11 @@ pub fn install_from_url(root: &Path, url: &str, force: bool) -> Result<Plugin> {
     if plugin_name(Path::new(name)).is_none() {
         bail!(
             "{name} is not a plugin filename (expected one of: {})",
-            PLUGIN_EXTS.iter().map(|e| format!(".{e}")).collect::<Vec<_>>().join(", ")
+            PLUGIN_EXTS
+                .iter()
+                .map(|e| format!(".{e}"))
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
 
@@ -115,11 +129,9 @@ pub fn install_from_url(root: &Path, url: &str, force: bool) -> Result<Plugin> {
     // Stage inside a temporary directory rather than renaming the file: the
     // filename *is* the subcommand name, so it has to survive the download.
     let staging = std::env::temp_dir().join(format!("kb-plugin-{}", std::process::id()));
-    std::fs::create_dir_all(&staging)
-        .with_context(|| format!("creating {}", staging.display()))?;
+    std::fs::create_dir_all(&staging).with_context(|| format!("creating {}", staging.display()))?;
     let staged = staging.join(name);
-    std::fs::write(&staged, body)
-        .with_context(|| format!("writing {}", staged.display()))?;
+    std::fs::write(&staged, body).with_context(|| format!("writing {}", staged.display()))?;
 
     let installed = install(root, &staged, force);
     let _ = std::fs::remove_dir_all(&staging);
@@ -177,16 +189,31 @@ mod tests {
 
     #[test]
     fn recognises_both_kb_and_nb_plugins() {
-        assert_eq!(plugin_name(Path::new("a/hello.kb-plugin")).as_deref(), Some("hello"));
-        assert_eq!(plugin_name(Path::new("a/hello.nb-plugin")).as_deref(), Some("hello"));
-        assert_eq!(plugin_name(Path::new("a/dark.nb-theme")).as_deref(), Some("dark"));
+        assert_eq!(
+            plugin_name(Path::new("a/hello.kb-plugin")).as_deref(),
+            Some("hello")
+        );
+        assert_eq!(
+            plugin_name(Path::new("a/hello.nb-plugin")).as_deref(),
+            Some("hello")
+        );
+        assert_eq!(
+            plugin_name(Path::new("a/dark.nb-theme")).as_deref(),
+            Some("dark")
+        );
         assert_eq!(plugin_name(Path::new("a/notes.md")), None);
     }
 
     #[test]
     fn themes_are_not_subcommands() {
-        let theme = Plugin { name: "dark".into(), path: PathBuf::from("dark.nb-theme") };
-        let command = Plugin { name: "hello".into(), path: PathBuf::from("hello.nb-plugin") };
+        let theme = Plugin {
+            name: "dark".into(),
+            path: PathBuf::from("dark.nb-theme"),
+        };
+        let command = Plugin {
+            name: "hello".into(),
+            path: PathBuf::from("hello.nb-plugin"),
+        };
         assert!(theme.is_theme());
         assert!(!command.is_theme());
     }
