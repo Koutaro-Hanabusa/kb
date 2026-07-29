@@ -59,10 +59,8 @@ impl<W: Write> Ctx<'_, W> {
 // ─────────────────────────── add ───────────────────────────
 
 pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
-    // `nb add` treats a bare argument as a filename when it has an extension
-    // and as content when it does not.
     let (positional_filename, positional_content) = match &args.target {
-        Some(target) if has_extension(target) => {
+        Some(target) if looks_like_path(target) => {
             (Some(target.clone()), args.content_arg.clone())
         }
         Some(target) => (None, Some(target.clone())),
@@ -95,8 +93,12 @@ pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
         Some(text) => Some(text.to_string()),
         None => match positional_content {
             Some(text) => Some(text),
-            // Piped input with no arguments is content too.
-            None if !std::io::stdin().is_terminal() => Some(read_stdin()?),
+            // Piped input with no arguments is content too — but an empty pipe
+            // is not content, it is the absence of it.
+            None if !std::io::stdin().is_terminal() => {
+                let text = read_stdin()?;
+                (!text.trim().is_empty()).then_some(text)
+            }
             None => None,
         },
     };
@@ -138,13 +140,18 @@ pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
     // way of a script. `--edit` asks for it anyway.
     if args.edit || (!has_content && !args.no_edit) {
         ctx.out.flush()?;
-        shell::launch(&shell::editor(None), &path)?;
+        shell::launch(&editor_for(ctx, None), &path)?;
     }
     Ok(())
 }
 
-fn has_extension(value: &str) -> bool {
-    Path::new(value).extension().is_some()
+/// Whether a bare argument to `add` names a path rather than content.
+///
+/// A slash settles it — `knowledge/` is a folder and `knowledge/noext` a file
+/// in it, regardless of extension. Only without one does `nb` fall back to
+/// looking for a file extension, treating anything else as the note's content.
+fn looks_like_path(value: &str) -> bool {
+    value.contains('/') || Path::new(value).extension().is_some()
 }
 
 fn read_stdin() -> Result<String> {
@@ -290,6 +297,14 @@ fn encryption_tool<W: Write>(ctx: &Ctx<'_, W>) -> Result<kb_core::encrypt::Tool>
     kb_core::encrypt::Tool::from_setting(settings.get("encryption_tool").as_deref())
 }
 
+/// The editor to use, honouring the `editor` setting alongside the environment.
+fn editor_for<W: Write>(ctx: &Ctx<'_, W>, override_with: Option<&str>) -> String {
+    let configured = kb_core::settings::Settings::load(&ctx.workspace.root)
+        .ok()
+        .and_then(|settings| settings.get("editor"));
+    shell::editor(override_with, configured.as_deref())
+}
+
 /// Use the given password, or ask for one.
 fn resolve_password(given: Option<&str>, confirm: bool) -> Result<String> {
     match given {
@@ -377,7 +392,7 @@ pub fn edit<W: Write>(ctx: &mut Ctx<'_, W>, args: &EditArgs) -> Result<()> {
 
     let Some(content) = content else {
         ctx.out.flush()?;
-        return shell::launch(&shell::editor(args.editor.as_deref()), &path);
+        return shell::launch(&editor_for(ctx, args.editor.as_deref()), &path);
     };
 
     let existing = std::fs::read_to_string(&path)
@@ -754,7 +769,10 @@ pub fn pick(workspace: &Workspace, args: &PickArgs) -> Result<()> {
         return Ok(());
     };
     if args.edit {
-        shell::launch(&shell::editor(None), &path)
+        let configured = kb_core::settings::Settings::load(&workspace.root)
+            .ok()
+            .and_then(|settings| settings.get("editor"));
+        shell::launch(&shell::editor(None, configured.as_deref()), &path)
     } else {
         shell::page(&path)
     }
@@ -1193,7 +1211,7 @@ pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<(
                 std::fs::write(&path, "")?;
             }
             ctx.out.flush()?;
-            return shell::launch(&shell::editor(None), &path);
+            return shell::launch(&editor_for(ctx, None), &path);
         }
         Some(SettingsCommand::List(list)) => {
             for (number, name) in kb_core::settings::KNOWN.iter().enumerate() {
@@ -1379,7 +1397,7 @@ pub fn env<W: Write>(ctx: &mut Ctx<'_, W>, args: &EnvArgs) -> Result<()> {
     if args.long {
         let settings = kb_core::settings::Settings::load(&ctx.workspace.root)?;
         writeln!(ctx.out, "config    {}", settings.path().display())?;
-        writeln!(ctx.out, "editor    {}", shell::editor(None))?;
+        writeln!(ctx.out, "editor    {}", editor_for(ctx, None))?;
         for tool in ["git", "fzf", "glow", "bat", "pandoc", "gpg", "openssl"] {
             let found = if shell::has_command(tool) { "yes" } else { "no" };
             writeln!(ctx.out, "{tool:<9} {found}")?;

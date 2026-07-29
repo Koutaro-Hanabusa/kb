@@ -58,7 +58,12 @@ pub fn create(notebook: &Notebook, spec: &NewNote, now: &Zoned) -> Result<PathBu
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("creating {}", dir.display()))?;
 
-    let path = available_path(&dir, &stem(spec, now), spec.extension.as_deref());
+    let path = match spec.filename.as_deref().map(str::trim).filter(|name| !name.is_empty()) {
+        // An explicit filename is taken as given — `nb add knowledge/noext`
+        // produces `noext`, not `noext.md`.
+        Some(filename) => available_exact(&dir, filename),
+        None => available_path(&dir, &stem(spec, now), spec.extension.as_deref()),
+    };
     let stamp = format_timestamp(now);
 
     // A supplied body is written as-is; it may already open with its own
@@ -87,18 +92,27 @@ pub fn create(notebook: &Notebook, spec: &NewNote, now: &Zoned) -> Result<PathBu
     Ok(path)
 }
 
-/// The filename stem: an explicit filename, else the title, else a timestamp.
+/// The filename stem: the title if there is one, else a timestamp.
 fn stem(spec: &NewNote, now: &Zoned) -> String {
-    if let Some(filename) = &spec.filename {
-        return Path::new(filename)
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| filename.clone());
-    }
     match spec.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         Some(title) => filename_stem(title),
         None => timestamp_stem(now),
     }
+}
+
+/// Use `name` exactly, adding a numeric suffix only to avoid a collision.
+fn available_exact(dir: &Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let path = Path::new(name);
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    (2u32..)
+        .map(|n| dir.join(format!("{stem}-{n}{ext}")))
+        .find(|candidate| !candidate.exists())
+        .expect("an unused filename exists")
 }
 
 fn derived_title(body: &str, path: &Path) -> String {
@@ -212,6 +226,31 @@ mod tests {
         let path = create(&nb, &spec, &Zoned::now()).unwrap();
         assert_eq!(path, nb.root.join("knowledge/chosen.md"));
         assert_eq!(nb.read(&path).unwrap().title, "Ignored");
+        std::fs::remove_dir_all(&nb.root).unwrap();
+    }
+
+    /// `nb add knowledge/noext` writes `noext`, with no extension bolted on.
+    #[test]
+    fn an_extensionless_filename_stays_extensionless() {
+        let nb = notebook("noext");
+        let spec = NewNote {
+            filename: Some("noext".into()),
+            body: Some("body".into()),
+            ..NewNote::untitled("knowledge")
+        };
+        let path = create(&nb, &spec, &Zoned::now()).unwrap();
+        assert_eq!(path, nb.root.join("knowledge/noext"));
+        std::fs::remove_dir_all(&nb.root).unwrap();
+    }
+
+    #[test]
+    fn a_colliding_explicit_filename_gets_a_suffix() {
+        let nb = notebook("collide-exact");
+        let spec = NewNote { filename: Some("a.md".into()), ..NewNote::untitled("knowledge") };
+        let first = create(&nb, &spec, &Zoned::now()).unwrap();
+        let second = create(&nb, &spec, &Zoned::now()).unwrap();
+        assert_eq!(first, nb.root.join("knowledge/a.md"));
+        assert_eq!(second, nb.root.join("knowledge/a-2.md"));
         std::fs::remove_dir_all(&nb.root).unwrap();
     }
 

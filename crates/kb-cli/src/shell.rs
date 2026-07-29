@@ -9,13 +9,27 @@ use kb_core::Note;
 
 use crate::output;
 
-/// The editor to use: an explicit override, then `$VISUAL`, `$EDITOR`, `vi`.
-pub fn editor(override_with: Option<&str>) -> String {
+/// The editor to use.
+///
+/// The order is `nb`'s: an explicit `--editor`, then the `editor` setting (which
+/// `$NB_EDITOR` overrides), then `$EDITOR`, then `$VISUAL`, then `vi`.
+pub fn editor(override_with: Option<&str>, configured: Option<&str>) -> String {
     override_with
         .map(str::to_string)
-        .or_else(|| std::env::var("VISUAL").ok())
-        .or_else(|| std::env::var("EDITOR").ok())
+        .or_else(|| non_empty(std::env::var("NB_EDITOR").ok()))
+        .or_else(|| configured.map(str::to_string).and_then(|v| non_empty(Some(v))))
+        .or_else(|| non_empty(std::env::var("EDITOR").ok()))
+        .or_else(|| non_empty(std::env::var("VISUAL").ok()))
         .unwrap_or_else(|| "vi".to_string())
+}
+
+fn non_empty(value: Option<String>) -> Option<String> {
+    value.filter(|text| !text.trim().is_empty())
+}
+
+/// Whether there is a terminal to hand an interactive program.
+pub fn has_terminal() -> bool {
+    std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
 }
 
 /// Display a file, rendering Markdown when a renderer is available.
@@ -58,7 +72,16 @@ pub fn launch(program: &str, path: &Path) -> Result<()> {
 }
 
 /// Run an interactive program against `path`, inheriting the terminal.
+///
+/// Without a terminal there is nothing for an editor to attach to, and starting
+/// one anyway is how a note-taking tool hangs an automated session. Say so and
+/// carry on — by this point the file exists and its path has been printed.
 pub fn launch_with_args(program: &str, args: &[&str], path: &Path) -> Result<()> {
+    if !has_terminal() {
+        eprintln!("kb: no terminal, not opening {program} — the file is at {}", path.display());
+        return Ok(());
+    }
+
     // $EDITOR may be a command line ("code -w"), so let the shell split it.
     let status = Command::new("sh")
         .arg("-c")
