@@ -156,6 +156,19 @@ pub fn remote_url(repo: &Path) -> Result<String> {
     Ok(run(repo, &["remote", "get-url", "origin"])?.trim().to_string())
 }
 
+/// Point `origin` at `url`, adding the remote if it is not there yet.
+pub fn set_remote(repo: &Path, url: &str) -> Result<()> {
+    if remote_url(repo).is_ok() {
+        run(repo, &["remote", "set-url", "origin", url]).map(|_| ())
+    } else {
+        run(repo, &["remote", "add", "origin", url]).map(|_| ())
+    }
+}
+
+pub fn remove_remote(repo: &Path) -> Result<()> {
+    run(repo, &["remote", "remove", "origin"]).map(|_| ())
+}
+
 /// Run an arbitrary git command, returning stdout.
 ///
 /// This backs `kb git`, which is a deliberate passthrough — whatever git accepts

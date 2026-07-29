@@ -1067,6 +1067,244 @@ fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
         .expect("an unused filename exists")
 }
 
+// ─────────────────────────── settings ───────────────────────────
+
+pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<()> {
+    let root = ctx.workspace.root.clone();
+    let mut settings = kb_core::settings::Settings::load(&root)?;
+
+    match &args.command {
+        Some(SettingsCommand::Get(name)) | Some(SettingsCommand::Show(name)) => {
+            let name = kb_core::settings::resolve_name(&name.name)?;
+            match settings.get(&name) {
+                Some(value) => writeln!(ctx.out, "{value}")?,
+                None => writeln!(ctx.out, "{}", ctx.style.dim("(unset)"))?,
+            }
+        }
+        Some(SettingsCommand::Set(set)) => return set_setting(ctx, set),
+        Some(SettingsCommand::Unset(name)) => {
+            let name = kb_core::settings::resolve_name(&name.name)?;
+            settings.unset(&name)?;
+            writeln!(ctx.out, "unset {name}")?;
+        }
+        Some(SettingsCommand::Edit) => {
+            let path = settings.path().to_path_buf();
+            if !path.exists() {
+                std::fs::write(&path, "")?;
+            }
+            ctx.out.flush()?;
+            return shell::launch(&shell::editor(None), &path);
+        }
+        Some(SettingsCommand::List(list)) => {
+            for (number, name) in kb_core::settings::KNOWN.iter().enumerate() {
+                if list.long {
+                    let value = settings.get(name).unwrap_or_default();
+                    writeln!(ctx.out, "[{}] {name:<20} {value}", number + 1)?;
+                } else {
+                    writeln!(ctx.out, "[{}] {name}", number + 1)?;
+                }
+            }
+        }
+        None => {
+            for (number, name) in kb_core::settings::KNOWN.iter().enumerate() {
+                let value = settings.get(name).unwrap_or_default();
+                writeln!(ctx.out, "[{}] {name:<20} {value}", number + 1)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn set_setting<W: Write>(ctx: &mut Ctx<'_, W>, args: &SetArgs) -> Result<()> {
+    let root = ctx.workspace.root.clone();
+    let mut settings = kb_core::settings::Settings::load(&root)?;
+    let name = kb_core::settings::resolve_name(&args.name)?;
+
+    // `kb set <name>` with no value prints the current one, as `nb` does.
+    let Some(value) = &args.value else {
+        match settings.get(&name) {
+            Some(value) => writeln!(ctx.out, "{value}")?,
+            None => writeln!(ctx.out, "{}", ctx.style.dim("(unset)"))?,
+        }
+        return Ok(());
+    };
+
+    settings.set(&name, value)?;
+    writeln!(ctx.out, "{name} = {value}")?;
+    Ok(())
+}
+
+pub fn unset_setting<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingNameArgs) -> Result<()> {
+    let root = ctx.workspace.root.clone();
+    let mut settings = kb_core::settings::Settings::load(&root)?;
+    let name = kb_core::settings::resolve_name(&args.name)?;
+    settings.unset(&name)?;
+    writeln!(ctx.out, "unset {name}")?;
+    Ok(())
+}
+
+// ─────────────────────────── remote / run / shell ───────────────────────────
+
+pub fn remote<W: Write>(ctx: &mut Ctx<'_, W>, args: &RemoteArgs) -> Result<()> {
+    match &args.command {
+        Some(RemoteCommand::Set(set)) => {
+            let root = ctx.notebook(set.notebook.as_deref())?.root.clone();
+            git::set_remote(&root, &set.url)?;
+            writeln!(ctx.out, "{}", set.url)?;
+        }
+        Some(RemoteCommand::Remove(remove)) => {
+            let notebook = ctx.notebook(remove.notebook.as_deref())?.clone();
+            if !remove.force {
+                ctx.out.flush()?;
+                if !shell::confirm(&format!("Remove the remote from {}?", notebook.name))? {
+                    writeln!(ctx.out, "Cancelled.")?;
+                    return Ok(());
+                }
+            }
+            git::remove_remote(&notebook.root)?;
+            writeln!(ctx.out, "removed")?;
+        }
+        None => {
+            for notebook in ctx.workspace.select(args.notebook.as_deref())? {
+                let url = git::remote_url(&notebook.root).unwrap_or_else(|_| "(none)".into());
+                writeln!(ctx.out, "{}  {url}", ctx.style.path(&notebook.name))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn run_in_notebook<W: Write>(ctx: &mut Ctx<'_, W>, args: &RunArgs) -> Result<()> {
+    let root = ctx.notebook(args.notebook.as_deref())?.root.clone();
+    ctx.out.flush()?;
+
+    let status = std::process::Command::new(&args.command[0])
+        .args(&args.command[1..])
+        .current_dir(&root)
+        .status()
+        .with_context(|| format!("running {}", args.command[0]))?;
+    if !status.success() {
+        bail!("{} exited with {status}", args.command[0]);
+    }
+    Ok(())
+}
+
+pub fn interactive_shell<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShellArgs) -> Result<()> {
+    let root = ctx.notebook(args.notebook.as_deref())?.root.clone();
+    let shell_program = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
+
+    writeln!(ctx.out, "{}", ctx.style.dim(&format!("{} — type `exit` to leave", root.display())))?;
+    ctx.out.flush()?;
+
+    std::process::Command::new(&shell_program)
+        .current_dir(&root)
+        .status()
+        .with_context(|| format!("running {shell_program}"))?;
+    Ok(())
+}
+
+// ─────────────────────────── import / export ───────────────────────────
+
+pub fn import<W: Write>(ctx: &mut Ctx<'_, W>, args: &ImportArgs) -> Result<()> {
+    let target = args.to.clone().unwrap_or_default();
+    let parsed = Selector::parse(&target);
+    let notebook = ctx.notebook(parsed.notebook.as_deref())?.clone();
+    let dir = notebook.root.join(parsed.folder_path());
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("creating {}", dir.display()))?;
+
+    for source in &args.paths {
+        if !source.exists() {
+            bail!("not found: {}", source.display());
+        }
+        let name = source
+            .file_name()
+            .with_context(|| format!("{} has no filename", source.display()))?;
+        let destination = unique_beside(&dir.join(name));
+
+        if args.move_files {
+            std::fs::rename(source, &destination).or_else(|_| {
+                // A rename across filesystems fails; fall back to copy + remove.
+                std::fs::copy(source, &destination)
+                    .and_then(|_| std::fs::remove_file(source))
+                    .map(|_| ())
+            })?;
+        } else {
+            std::fs::copy(source, &destination)
+                .with_context(|| format!("copying {}", source.display()))?;
+        }
+
+        let mut index = Index::load(&dir)?;
+        index.add(&file_name(&destination));
+        index.save(&dir)?;
+        writeln!(ctx.out, "{}", destination.display())?;
+    }
+    Ok(())
+}
+
+pub fn export<W: Write>(ctx: &mut Ctx<'_, W>, args: &ExportArgs) -> Result<()> {
+    let source = ctx.resolve(&args.selector)?.path().to_path_buf();
+
+    // A directory destination keeps the item's own filename.
+    let destination = if args.path.is_dir() {
+        args.path.join(source.file_name().context("item has no filename")?)
+    } else {
+        args.path.clone()
+    };
+
+    if destination.exists() && !args.force {
+        ctx.out.flush()?;
+        if !shell::confirm(&format!("Overwrite {}?", destination.display()))? {
+            writeln!(ctx.out, "Cancelled.")?;
+            return Ok(());
+        }
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(&source, &destination)
+        .with_context(|| format!("copying {} to {}", source.display(), destination.display()))?;
+    writeln!(ctx.out, "{}", destination.display())?;
+    Ok(())
+}
+
+// ─────────────────────────── env / subcommands / update ───────────────────────────
+
+pub fn env<W: Write>(ctx: &mut Ctx<'_, W>, args: &EnvArgs) -> Result<()> {
+    let notebook = ctx.notebook(None)?.name.clone();
+    writeln!(ctx.out, "kb        {}", env!("CARGO_PKG_VERSION"))?;
+    writeln!(ctx.out, "root      {}", ctx.workspace.root.display())?;
+    writeln!(ctx.out, "notebook  {notebook}")?;
+
+    if args.long {
+        let settings = kb_core::settings::Settings::load(&ctx.workspace.root)?;
+        writeln!(ctx.out, "config    {}", settings.path().display())?;
+        writeln!(ctx.out, "editor    {}", shell::editor(None))?;
+        for tool in ["git", "fzf", "glow", "bat", "pandoc", "gpg", "openssl"] {
+            let found = if shell::has_command(tool) { "yes" } else { "no" };
+            writeln!(ctx.out, "{tool:<9} {found}")?;
+        }
+        for (name, value) in settings.entries() {
+            writeln!(ctx.out, "set       {name} = {value}")?;
+        }
+    }
+    Ok(())
+}
+
+/// A destination path that does not collide: `a.md` → `a-2.md`.
+fn unique_beside(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    (2u32..)
+        .map(|n| dir.join(format!("{stem}-{n}{ext}")))
+        .find(|candidate| !candidate.exists())
+        .expect("an unused filename exists")
+}
+
 // ─────────────────────────── helpers ───────────────────────────
 
 fn to_query(filters: &FilterArgs) -> Result<Query> {

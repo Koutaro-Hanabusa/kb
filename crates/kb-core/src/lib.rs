@@ -17,6 +17,7 @@ pub mod note;
 pub mod render;
 pub mod search;
 pub mod selector;
+pub mod settings;
 pub mod sync;
 pub mod todo;
 pub mod workspace;

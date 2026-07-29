@@ -136,11 +136,196 @@ pub enum Command {
     /// Browse notes in a web browser
     Browse(BrowseArgs),
 
+    /// View and change settings
+    Settings(SettingsArgs),
+
+    /// Set a setting (alias for `settings set`)
+    Set(SetArgs),
+
+    /// Unset a setting (alias for `settings unset`)
+    Unset(SettingNameArgs),
+
+    /// Manage a notebook's git remote
+    Remote(RemoteArgs),
+
+    /// Run a shell command inside a notebook
+    Run(RunArgs),
+
+    /// Start an interactive kb shell
+    Shell(ShellArgs),
+
+    /// Import files into a notebook
+    Import(ImportArgs),
+
+    /// Export an item to a path
+    Export(ExportArgs),
+
+    /// Generate shell completions
+    Completions(CompletionsArgs),
+
+    /// Print the environment kb is running in
+    Env(EnvArgs),
+
+    /// List every subcommand
+    Subcommands,
+
+    /// Report how to update kb
+    Update,
+
     /// Archive a notebook
     Archive(NotebookArgs),
 
     /// Remove a notebook's archived mark
     Unarchive(NotebookArgs),
+}
+
+#[derive(Args)]
+pub struct SettingsArgs {
+    #[command(subcommand)]
+    pub command: Option<SettingsCommand>,
+}
+
+#[derive(Subcommand)]
+pub enum SettingsCommand {
+    /// List settings
+    List(SettingsListArgs),
+    /// Print a setting's value
+    Get(SettingNameArgs),
+    /// Print a setting's value
+    Show(SettingNameArgs),
+    /// Change a setting
+    Set(SetArgs),
+    /// Return a setting to its default
+    Unset(SettingNameArgs),
+    /// Open the settings file in $EDITOR
+    Edit,
+}
+
+#[derive(Args)]
+pub struct SettingsListArgs {
+    /// Show values as well as names
+    #[arg(long)]
+    pub long: bool,
+}
+
+#[derive(Args)]
+pub struct SettingNameArgs {
+    /// Setting name or number
+    #[arg(value_name = "NAME|NUMBER")]
+    pub name: String,
+}
+
+#[derive(Args)]
+pub struct SetArgs {
+    /// Setting name or number
+    #[arg(value_name = "NAME|NUMBER")]
+    pub name: String,
+
+    /// New value
+    #[arg(value_name = "VALUE")]
+    pub value: Option<String>,
+}
+
+#[derive(Args)]
+pub struct RemoteArgs {
+    #[command(subcommand)]
+    pub command: Option<RemoteCommand>,
+
+    /// Notebook to inspect
+    #[arg(short = 'n', long, value_name = "NAME")]
+    pub notebook: Option<String>,
+}
+
+#[derive(Subcommand)]
+pub enum RemoteCommand {
+    /// Set the remote URL
+    Set(RemoteSetArgs),
+    /// Remove the remote
+    Remove(RemoteRemoveArgs),
+}
+
+#[derive(Args)]
+pub struct RemoteSetArgs {
+    /// Remote URL
+    #[arg(value_name = "URL")]
+    pub url: String,
+
+    /// Notebook to change
+    #[arg(short = 'n', long, value_name = "NAME")]
+    pub notebook: Option<String>,
+}
+
+#[derive(Args)]
+pub struct RemoteRemoveArgs {
+    /// Notebook to change
+    #[arg(short = 'n', long, value_name = "NAME")]
+    pub notebook: Option<String>,
+
+    /// Skip the confirmation prompt
+    #[arg(short, long)]
+    pub force: bool,
+}
+
+#[derive(Args)]
+pub struct RunArgs {
+    /// Notebook to run in
+    #[arg(short = 'n', long, value_name = "NAME")]
+    pub notebook: Option<String>,
+
+    /// Command and arguments
+    #[arg(value_name = "COMMAND", required = true, trailing_var_arg = true, allow_hyphen_values = true)]
+    pub command: Vec<String>,
+}
+
+#[derive(Args)]
+pub struct ShellArgs {
+    /// Notebook to start in
+    #[arg(short = 'n', long, value_name = "NAME")]
+    pub notebook: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ImportArgs {
+    /// Files or directories to import
+    #[arg(value_name = "PATH", required = true)]
+    pub paths: Vec<PathBuf>,
+
+    /// Destination, optionally scoped to a notebook
+    #[arg(long, value_name = "SELECTOR")]
+    pub to: Option<String>,
+
+    /// Move the files instead of copying them
+    #[arg(long)]
+    pub move_files: bool,
+}
+
+#[derive(Args)]
+pub struct ExportArgs {
+    /// Item to export
+    #[arg(value_name = "SELECTOR")]
+    pub selector: String,
+
+    /// Destination path
+    #[arg(value_name = "PATH")]
+    pub path: PathBuf,
+
+    /// Overwrite an existing file
+    #[arg(short, long)]
+    pub force: bool,
+}
+
+#[derive(Args)]
+pub struct CompletionsArgs {
+    /// Shell to generate completions for
+    #[arg(value_name = "SHELL")]
+    pub shell: clap_complete::Shell,
+}
+
+#[derive(Args)]
+pub struct EnvArgs {
+    /// Show paths and resolved settings
+    #[arg(short, long)]
+    pub long: bool,
 }
 
 #[derive(Args)]

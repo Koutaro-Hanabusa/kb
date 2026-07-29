@@ -17,6 +17,7 @@ use output::Style;
 use run::{Ctx, ViewMode};
 
 fn main() -> Result<()> {
+    restore_sigpipe();
     let cli = Cli::parse();
 
     // `kb init` runs before a knowledge base exists, so it cannot open one.
@@ -70,6 +71,32 @@ fn main() -> Result<()> {
         Some(Command::Do(args)) => run::todo(&mut ctx, &todo_shortcut(args, true))?,
         Some(Command::Undo(args)) => run::todo(&mut ctx, &todo_shortcut(args, false))?,
         Some(Command::Browse(args)) => run::browse(&mut ctx, args)?,
+        Some(Command::Settings(args)) => run::settings(&mut ctx, args)?,
+        Some(Command::Set(args)) => run::set_setting(&mut ctx, args)?,
+        Some(Command::Unset(args)) => run::unset_setting(&mut ctx, args)?,
+        Some(Command::Remote(args)) => run::remote(&mut ctx, args)?,
+        Some(Command::Run(args)) => run::run_in_notebook(&mut ctx, args)?,
+        Some(Command::Shell(args)) => run::interactive_shell(&mut ctx, args)?,
+        Some(Command::Import(args)) => run::import(&mut ctx, args)?,
+        Some(Command::Export(args)) => run::export(&mut ctx, args)?,
+        Some(Command::Env(args)) => run::env(&mut ctx, args)?,
+        Some(Command::Subcommands) => {
+            use clap::CommandFactory;
+            for sub in Cli::command().get_subcommands() {
+                writeln!(ctx.out, "{}", sub.get_name())?;
+            }
+        }
+        Some(Command::Update) => {
+            writeln!(ctx.out, "kb {}", env!("CARGO_PKG_VERSION"))?;
+            writeln!(
+                ctx.out,
+                "kb is managed by Nix; update it with `nix flake update kb` in your dotfiles."
+            )?;
+        }
+        Some(Command::Completions(args)) => {
+            use clap::CommandFactory;
+            clap_complete::generate(args.shell, &mut Cli::command(), "kb", &mut ctx.out);
+        }
         Some(Command::Pin(args)) => run::pin(&mut ctx, args, true)?,
         Some(Command::Unpin(args)) => run::pin(&mut ctx, args, false)?,
         Some(Command::Archive(args)) => run::archive(&mut ctx, args, true)?,
@@ -95,6 +122,18 @@ fn main() -> Result<()> {
 
     out.flush()?;
     Ok(())
+}
+
+/// Die quietly when a pipe closes, the way every other CLI does.
+///
+/// Rust ignores SIGPIPE so that writes fail with EPIPE instead, which turns
+/// `kb ls | head` into an error — or a panic, from code that unwraps the write.
+fn restore_sigpipe() {
+    // SAFETY: setting a signal disposition to the default is always valid, and
+    // this runs before any other thread exists.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
 }
 
 /// `kb do <id>` is shorthand for `kb todo do <id>`.
