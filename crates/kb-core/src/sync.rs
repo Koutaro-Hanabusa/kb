@@ -1,9 +1,14 @@
 //! Committing and exchanging notes with the remote.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::git::{self, StagedChange};
 use crate::workspace::Notebook;
+
+fn is_markdown(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown")
+}
 
 /// What a sync did to one notebook.
 #[derive(Debug, Clone)]
@@ -42,6 +47,22 @@ pub fn sync(
     }
 
     let staged = git::staged_changes(repo)?;
+
+    // Staging Markdown does not unstage what someone else already staged, and
+    // committing now would sweep it in. Stop rather than publish a change the
+    // caller never asked for.
+    if !include_everything {
+        let foreign: Vec<&str> =
+            staged.iter().filter(|c| !is_markdown(&c.path)).map(|c| c.path.as_str()).collect();
+        if !foreign.is_empty() {
+            bail!(
+                "{} has non-Markdown changes already staged ({}); commit or unstage them, or pass --all",
+                notebook.name,
+                foreign.join(", ")
+            );
+        }
+    }
+
     if !staged.is_empty() {
         let text = message.map(str::to_string).unwrap_or_else(|| describe(&staged));
         git::commit(repo, &text)?;
@@ -91,5 +112,14 @@ mod tests {
     fn a_mixed_batch_reads_as_an_update() {
         let staged = [change('A', "a.md"), change('M', "b.md")];
         assert_eq!(describe(&staged), "Update 2 notes");
+    }
+
+    #[test]
+    fn recognises_markdown_by_extension() {
+        assert!(is_markdown("knowledge/a.md"));
+        assert!(is_markdown("knowledge/a.MARKDOWN"));
+        assert!(!is_markdown("knowledge/.index"));
+        assert!(!is_markdown("mcp"));
+        assert!(!is_markdown("a.md.bak"));
     }
 }

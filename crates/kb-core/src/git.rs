@@ -113,8 +113,13 @@ pub fn commit(repo: &Path, message: &str) -> Result<()> {
     run(repo, &["commit", "-m", message]).map(|_| ())
 }
 
+/// Pull with rebase, stashing anything left in the working tree.
+///
+/// These repositories routinely carry unrelated dirt — a nested checkout, an
+/// index file some other tool rewrote — and without `--autostash` a rebase
+/// refuses to start because of it.
 pub fn pull_rebase(repo: &Path) -> Result<String> {
-    run(repo, &["pull", "--rebase"])
+    run(repo, &["pull", "--rebase", "--autostash"])
 }
 
 pub fn push(repo: &Path) -> Result<String> {
