@@ -215,7 +215,8 @@ fn workspace_root(cli: &Cli) -> std::path::PathBuf {
         std::env::var_os(kb_core::workspace::ROOT_ENV)
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| {
-                std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".nb")
+                std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+                    .join(kb_core::workspace::DEFAULT_ROOT_DIR)
             })
     })
 }
