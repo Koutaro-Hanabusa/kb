@@ -34,6 +34,7 @@ enum Command {
     /// Show tags and how many notes carry them
     Tags(FilterArgs),
     /// Create a note and open it in $EDITOR
+    #[command(alias = "add")]
     New(NewArgs),
     /// Pick a note with fzf and read it
     Open(OpenArgs),
