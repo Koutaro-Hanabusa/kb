@@ -11,13 +11,14 @@ use crate::output;
 
 /// The editor to use.
 ///
-/// The order is `nb`'s: an explicit `--editor`, then the `editor` setting (which
-/// `$NB_EDITOR` overrides), then `$EDITOR`, then `$VISUAL`, then `vi`.
+/// An explicit `--editor` wins, then `$KB_EDITOR` / `$NB_EDITOR`, then the
+/// `editor` setting, then `$EDITOR`, then `$VISUAL`, then `vi`.
 pub fn editor(override_with: Option<&str>, configured: Option<&str>) -> String {
     override_with
         .map(str::to_string)
+        .or_else(|| non_empty(std::env::var("KB_EDITOR").ok()))
         .or_else(|| non_empty(std::env::var("NB_EDITOR").ok()))
-        .or_else(|| configured.map(str::to_string).and_then(|v| non_empty(Some(v))))
+        .or_else(|| non_empty(configured.map(str::to_string)))
         .or_else(|| non_empty(std::env::var("EDITOR").ok()))
         .or_else(|| non_empty(std::env::var("VISUAL").ok()))
         .unwrap_or_else(|| "vi".to_string())

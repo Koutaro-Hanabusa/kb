@@ -118,7 +118,7 @@ pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
     // Encryption replaces the plaintext file, so it happens before indexing —
     // the index must name the file that actually exists.
     let path = if args.encrypt {
-        let tool = encryption_tool(ctx)?;
+        let tool = encryption_tool()?;
         let password = resolve_password(args.password.as_deref(), true)?;
         let encrypted = kb_core::encrypt::encrypted_path(&path);
         kb_core::encrypt::encrypt(tool, &path, &encrypted, &password)?;
@@ -238,8 +238,18 @@ pub fn show<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShowArgs, mode: ViewMode) -> 
 
     let (path, id) = match &resolved {
         Resolved::Note { path, id } => (path.clone(), *id),
-        // Showing a folder or notebook lists it, as `nb` does.
-        Resolved::Folder { .. } | Resolved::Notebook { .. } => {
+
+        // A folder has no single thing to show. `show` lists it, as `nb` does;
+        // `open` and `peek` hand it to the picker, which is what `nb` reaches
+        // for a file browser to do — except this one previews the notes.
+        Resolved::Folder { path, .. } | Resolved::Notebook { root: path, .. } => {
+            if mode.browses_folders() && !args.opts.print {
+                if let Some(chosen) = pick_within(ctx, path)? {
+                    ctx.out.flush()?;
+                    return shell::page(&chosen);
+                }
+                return Ok(());
+            }
             return list(ctx, &ListArgs {
                 selector: Some(input.to_string()),
                 filters: FilterArgs::default(),
@@ -257,7 +267,7 @@ pub fn show<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShowArgs, mode: ViewMode) -> 
     // An encrypted item is decrypted to a temporary file that is removed as soon
     // as the viewer exits, so plaintext never lands in the notebook.
     if kb_core::encrypt::is_encrypted(&path) {
-        let tool = encryption_tool(ctx)?;
+        let tool = encryption_tool()?;
         let password = resolve_password(args.opts.password.as_deref(), false)?;
         let plain = temp_path(&path);
         kb_core::encrypt::decrypt(tool, &path, &plain, &password)?;
@@ -269,7 +279,7 @@ pub fn show<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShowArgs, mode: ViewMode) -> 
         } else {
             ctx.out.flush()?;
             match mode {
-                ViewMode::Page => shell::page(&plain),
+                ViewMode::Show | ViewMode::Peek => shell::page(&plain),
                 ViewMode::Open => shell::open_externally(&plain),
             }
         };
@@ -286,23 +296,50 @@ pub fn show<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShowArgs, mode: ViewMode) -> 
 
     ctx.out.flush()?;
     match mode {
-        ViewMode::Page => shell::page(&path),
+        ViewMode::Show | ViewMode::Peek => shell::page(&path),
         ViewMode::Open => shell::open_externally(&path),
     }
 }
 
 /// The configured encryption tool.
-fn encryption_tool<W: Write>(ctx: &Ctx<'_, W>) -> Result<kb_core::encrypt::Tool> {
-    let settings = kb_core::settings::Settings::load(&ctx.workspace.root)?;
+fn encryption_tool() -> Result<kb_core::encrypt::Tool> {
+    let settings = kb_core::settings::Settings::load()?;
     kb_core::encrypt::Tool::from_setting(settings.get("encryption_tool").as_deref())
 }
 
-/// The editor to use, honouring the `editor` setting alongside the environment.
-fn editor_for<W: Write>(ctx: &Ctx<'_, W>, override_with: Option<&str>) -> String {
-    let configured = kb_core::settings::Settings::load(&ctx.workspace.root)
-        .ok()
-        .and_then(|settings| settings.get("editor"));
-    shell::editor(override_with, configured.as_deref())
+/// The editor to use, honouring the settings file alongside the environment.
+fn editor_for<W: Write>(_ctx: &Ctx<'_, W>, override_with: Option<&str>) -> String {
+    resolve_editor(override_with)
+}
+
+/// Work out the editor the way `nb` does, including the rc file's own logic.
+///
+/// The rc file is a shell script and may decide the editor at run time — mine
+/// picks `cat` inside an automated session so nothing blocks on an editor that
+/// will never be closed. Honouring that means sourcing the file, exactly as `nb`
+/// does, rather than reading `export` lines out of it.
+fn resolve_editor(override_with: Option<&str>) -> String {
+    if let Some(editor) = override_with {
+        return editor.to_string();
+    }
+
+    // An environment variable is the caller being explicit; nothing to work out.
+    if std::env::var_os("KB_EDITOR").is_some() || std::env::var_os("NB_EDITOR").is_some() {
+        return shell::editor(None, None);
+    }
+
+    // Otherwise ask the rc file by running it, not by reading it. It is a shell
+    // script and may well branch — reading the text would see both sides of an
+    // `if` and take whichever came last, which is how a guard meant to keep an
+    // editor out of an automated session silently stops working.
+    let from_rc = kb_core::settings::shell_environment();
+    let rc_editor = ["KB_EDITOR", "NB_EDITOR", "EDITOR", "VISUAL"]
+        .iter()
+        .find_map(|key| from_rc.get(*key))
+        .map(String::as_str)
+        .filter(|value| !value.trim().is_empty());
+
+    shell::editor(None, rc_editor)
 }
 
 /// Use the given password, or ask for one.
@@ -322,12 +359,31 @@ fn temp_path(encrypted: &Path) -> PathBuf {
 }
 
 /// How `show`, `peek`, and `open` differ once the item is resolved.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
-    /// Render in the terminal.
-    Page,
-    /// Hand to the system's preferred application.
+    /// `show` — render in the terminal; a folder is listed.
+    Show,
+    /// `peek` — render in the terminal; a folder opens the picker.
+    Peek,
+    /// `open` — hand to the system; a folder opens the picker.
     Open,
+}
+
+impl ViewMode {
+    /// Whether a folder should be browsed rather than listed.
+    fn browses_folders(self) -> bool {
+        matches!(self, Self::Peek | Self::Open)
+    }
+}
+
+/// Let the user choose a note from `dir` with fzf.
+fn pick_within<W: Write>(ctx: &Ctx<'_, W>, dir: &Path) -> Result<Option<PathBuf>> {
+    let mut notes = search::filter_notes(ctx.workspace, &Query::default())?;
+    notes.retain(|note| note.path.starts_with(dir));
+    if notes.is_empty() {
+        bail!("no notes under {}", dir.display());
+    }
+    shell::pick(&notes, None)
 }
 
 /// The `--path` / `--title` / … family: print one field and stop.
@@ -769,7 +825,7 @@ pub fn pick(workspace: &Workspace, args: &PickArgs) -> Result<()> {
         return Ok(());
     };
     if args.edit {
-        let configured = kb_core::settings::Settings::load(&workspace.root)
+        let configured = kb_core::settings::Settings::load()
             .ok()
             .and_then(|settings| settings.get("editor"));
         shell::launch(&shell::editor(None, configured.as_deref()), &path)
@@ -1188,8 +1244,8 @@ pub fn plugins<W: Write>(ctx: &mut Ctx<'_, W>, args: &PluginsArgs) -> Result<()>
 // ─────────────────────────── settings ───────────────────────────
 
 pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<()> {
-    let root = ctx.workspace.root.clone();
-    let mut settings = kb_core::settings::Settings::load(&root)?;
+
+    let mut settings = kb_core::settings::Settings::load()?;
 
     match &args.command {
         Some(SettingsCommand::Get(name)) | Some(SettingsCommand::Show(name)) => {
@@ -1234,8 +1290,8 @@ pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<(
 }
 
 pub fn set_setting<W: Write>(ctx: &mut Ctx<'_, W>, args: &SetArgs) -> Result<()> {
-    let root = ctx.workspace.root.clone();
-    let mut settings = kb_core::settings::Settings::load(&root)?;
+
+    let mut settings = kb_core::settings::Settings::load()?;
     let name = kb_core::settings::resolve_name(&args.name)?;
 
     // `kb set <name>` with no value prints the current one, as `nb` does.
@@ -1253,8 +1309,8 @@ pub fn set_setting<W: Write>(ctx: &mut Ctx<'_, W>, args: &SetArgs) -> Result<()>
 }
 
 pub fn unset_setting<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingNameArgs) -> Result<()> {
-    let root = ctx.workspace.root.clone();
-    let mut settings = kb_core::settings::Settings::load(&root)?;
+
+    let mut settings = kb_core::settings::Settings::load()?;
     let name = kb_core::settings::resolve_name(&args.name)?;
     settings.unset(&name)?;
     writeln!(ctx.out, "unset {name}")?;
@@ -1395,7 +1451,7 @@ pub fn env<W: Write>(ctx: &mut Ctx<'_, W>, args: &EnvArgs) -> Result<()> {
     writeln!(ctx.out, "notebook  {notebook}")?;
 
     if args.long {
-        let settings = kb_core::settings::Settings::load(&ctx.workspace.root)?;
+        let settings = kb_core::settings::Settings::load()?;
         writeln!(ctx.out, "config    {}", settings.path().display())?;
         writeln!(ctx.out, "editor    {}", editor_for(ctx, None))?;
         for tool in ["git", "fzf", "glow", "bat", "pandoc", "gpg", "openssl"] {

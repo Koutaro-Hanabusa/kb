@@ -55,8 +55,8 @@ fn main() -> Result<()> {
         Some(Command::Add(args)) => run::add(&mut ctx, args)?,
         Some(Command::List(args)) => run::list(&mut ctx, args)?,
         Some(Command::Search(args)) => run::search_notes(&mut ctx, args)?,
-        Some(Command::Show(args)) => run::show(&mut ctx, args, ViewMode::Page)?,
-        Some(Command::Peek(args)) => run::show(&mut ctx, args, ViewMode::Page)?,
+        Some(Command::Show(args)) => run::show(&mut ctx, args, ViewMode::Show)?,
+        Some(Command::Peek(args)) => run::show(&mut ctx, args, ViewMode::Peek)?,
         Some(Command::Open(args)) => run::show(&mut ctx, args, ViewMode::Open)?,
         Some(Command::Edit(args)) => run::edit(&mut ctx, args)?,
         Some(Command::Delete(args)) => run::delete(&mut ctx, args)?,
@@ -117,7 +117,7 @@ fn main() -> Result<()> {
             Some(selector) => run::show(
                 &mut ctx,
                 &ShowArgs { selector: Some(selector.clone()), opts: cli.show },
-                ViewMode::Page,
+                ViewMode::Show,
             )?,
             None => run::list(&mut ctx, &ListArgs {
                 selector: None,
