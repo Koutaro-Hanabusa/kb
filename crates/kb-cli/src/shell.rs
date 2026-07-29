@@ -1,6 +1,6 @@
 //! Handing control to other programs: editors, pagers, fzf.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -71,6 +71,43 @@ pub fn launch_with_args(program: &str, args: &[&str], path: &Path) -> Result<()>
         bail!("{program} exited with {status}");
     }
     Ok(())
+}
+
+/// Ask for a password on the terminal, optionally twice.
+///
+/// Echo is disabled through `stty` when a terminal is attached; without one
+/// (a script, a pipe) the line is simply read.
+pub fn prompt_password(confirm: bool) -> Result<String> {
+    let interactive = std::io::stdin().is_terminal();
+
+    let first = read_secret("Password: ", interactive)?;
+    if confirm {
+        let again = read_secret("Password again: ", interactive)?;
+        if first != again {
+            bail!("passwords did not match");
+        }
+    }
+    if first.is_empty() {
+        bail!("empty password");
+    }
+    Ok(first)
+}
+
+fn read_secret(prompt: &str, interactive: bool) -> Result<String> {
+    eprint!("{prompt}");
+    std::io::stderr().flush()?;
+
+    if interactive {
+        let _ = Command::new("stty").arg("-echo").status();
+    }
+    let mut line = String::new();
+    let read = std::io::stdin().lock().read_line(&mut line);
+    if interactive {
+        let _ = Command::new("stty").arg("echo").status();
+        eprintln!();
+    }
+    read.context("reading the password")?;
+    Ok(line.trim_end_matches(['\r', '\n']).to_string())
 }
 
 /// Ask for confirmation on stderr, so piped stdout stays clean.

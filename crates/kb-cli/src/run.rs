@@ -113,9 +113,24 @@ pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
     let has_content = spec.body.is_some();
     let path = kb_core::create::create(notebook, &spec, &jiff::Zoned::now())?;
 
-    let mut index = Index::load(path.parent().unwrap())?;
+    // Encryption replaces the plaintext file, so it happens before indexing —
+    // the index must name the file that actually exists.
+    let path = if args.encrypt {
+        let tool = encryption_tool(ctx)?;
+        let password = resolve_password(args.password.as_deref(), true)?;
+        let encrypted = kb_core::encrypt::encrypted_path(&path);
+        kb_core::encrypt::encrypt(tool, &path, &encrypted, &password)?;
+        std::fs::remove_file(&path)
+            .with_context(|| format!("removing {}", path.display()))?;
+        encrypted
+    } else {
+        path
+    };
+
+    let dir = path.parent().context("no parent directory")?;
+    let mut index = Index::load(dir)?;
     index.add(&file_name(&path));
-    index.save(path.parent().unwrap())?;
+    index.save(dir)?;
 
     writeln!(ctx.out, "{}", path.display())?;
 
@@ -232,6 +247,29 @@ pub fn show<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShowArgs, mode: ViewMode) -> 
         return Ok(());
     }
 
+    // An encrypted item is decrypted to a temporary file that is removed as soon
+    // as the viewer exits, so plaintext never lands in the notebook.
+    if kb_core::encrypt::is_encrypted(&path) {
+        let tool = encryption_tool(ctx)?;
+        let password = resolve_password(args.opts.password.as_deref(), false)?;
+        let plain = temp_path(&path);
+        kb_core::encrypt::decrypt(tool, &path, &plain, &password)?;
+
+        let result = if args.opts.print {
+            std::fs::read_to_string(&plain)
+                .with_context(|| format!("reading {}", plain.display()))
+                .and_then(|raw| write!(ctx.out, "{raw}").map_err(Into::into))
+        } else {
+            ctx.out.flush()?;
+            match mode {
+                ViewMode::Page => shell::page(&plain),
+                ViewMode::Open => shell::open_externally(&plain),
+            }
+        };
+        let _ = std::fs::remove_file(&plain);
+        return result;
+    }
+
     if args.opts.print {
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
@@ -244,6 +282,28 @@ pub fn show<W: Write>(ctx: &mut Ctx<'_, W>, args: &ShowArgs, mode: ViewMode) -> 
         ViewMode::Page => shell::page(&path),
         ViewMode::Open => shell::open_externally(&path),
     }
+}
+
+/// The configured encryption tool.
+fn encryption_tool<W: Write>(ctx: &Ctx<'_, W>) -> Result<kb_core::encrypt::Tool> {
+    let settings = kb_core::settings::Settings::load(&ctx.workspace.root)?;
+    kb_core::encrypt::Tool::from_setting(settings.get("encryption_tool").as_deref())
+}
+
+/// Use the given password, or ask for one.
+fn resolve_password(given: Option<&str>, confirm: bool) -> Result<String> {
+    match given {
+        Some(password) => Ok(password.to_string()),
+        None => shell::prompt_password(confirm),
+    }
+}
+
+/// A scratch path beside the encrypted file, for the decrypted copy.
+fn temp_path(encrypted: &Path) -> PathBuf {
+    let dir = encrypted.parent().unwrap_or(Path::new("."));
+    let stem = kb_core::encrypt::decrypted_path(encrypted);
+    let name = stem.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    dir.join(format!(".kb-decrypted-{}-{name}", std::process::id()))
 }
 
 /// How `show`, `peek`, and `open` differ once the item is resolved.

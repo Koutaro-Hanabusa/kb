@@ -8,6 +8,7 @@
 pub mod bookmark;
 pub mod browse;
 pub mod create;
+pub mod encrypt;
 pub mod frontmatter;
 pub mod git;
 pub mod index;

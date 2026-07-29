@@ -590,6 +590,14 @@ pub struct AddArgs {
     #[arg(long, value_name = "TYPE")]
     pub r#type: Option<String>,
 
+    /// Encrypt the note with a password
+    #[arg(short = 'e', long)]
+    pub encrypt: bool,
+
+    /// Password for --encrypt (prompted when omitted)
+    #[arg(long, value_name = "PASSWORD")]
+    pub password: Option<String>,
+
     /// Open the note in the editor even when content was supplied
     #[arg(long)]
     pub edit: bool,
@@ -702,6 +710,10 @@ pub struct ShowOpts {
     /// Print the file extension of the item
     #[arg(long)]
     pub r#type: bool,
+
+    /// Password for an encrypted item (prompted when omitted)
+    #[arg(long, value_name = "PASSWORD")]
+    pub password: Option<String>,
 }
 
 #[derive(Args)]
