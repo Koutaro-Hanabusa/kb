@@ -76,7 +76,7 @@ pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
     let notebook = ctx.notebook(notebook_name.as_deref())?;
 
     let folder = match (&args.folder, &scoped) {
-        (Some(folder), _) => Selector::parse(folder).folder_path(),
+        (Some(folder), _) => folder_path_of(folder),
         (None, Some(scoped)) => scoped.folder_path(),
         (None, None) => PathBuf::new(),
     };
@@ -143,6 +143,22 @@ pub fn add<W: Write>(ctx: &mut Ctx<'_, W>, args: &AddArgs) -> Result<()> {
         shell::launch(&editor_for(ctx, None), &path)?;
     }
     Ok(())
+}
+
+/// Interpret a `--folder` value as a folder path.
+///
+/// The whole value is the folder, with or without a trailing slash: `--folder
+/// knowledge` and `--folder knowledge/` mean the same thing. A plain selector
+/// would read the last segment as the item being named instead.
+fn folder_path_of(value: &str) -> PathBuf {
+    let parsed = Selector::parse(value);
+    let mut path = parsed.folder_path();
+    match &parsed.target {
+        Some(kb_core::Target::Name(name)) => path.push(name),
+        Some(kb_core::Target::Id(id)) => path.push(id.to_string()),
+        None => {}
+    }
+    path
 }
 
 /// Whether a bare argument to `add` names a path rather than content.
