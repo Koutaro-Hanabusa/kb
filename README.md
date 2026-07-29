@@ -59,13 +59,13 @@ Point `kb` at an existing `nb` knowledge base and it just works — same layout,
 same ids:
 
 ```sh
-kb ls                       # ~/.nb by default, or $KB_ROOT
+KB_ROOT=~/.nb kb ls         # ~/.kb is the default for new kb installations
 ```
 
 Starting fresh instead:
 
 ```sh
-kb init                     # creates ~/.nb/home as a git repository
+kb init                     # creates ~/.kb/home as a git repository
 ```
 
 ## Speed
@@ -95,7 +95,7 @@ A knowledge base is a directory of *notebooks*; each notebook is a directory of
 Markdown, normally a git repository:
 
 ```
-~/.nb/                  # or $KB_ROOT
+~/.kb/                  # or $KB_ROOT
 ├── .current            # notebook selected by `kb use`
 ├── home/               # a notebook
 │   ├── .index          # ids for this directory
@@ -270,7 +270,7 @@ Environment variables take precedence over the file:
 
 | Variable | Effect |
 | --- | --- |
-| `KB_ROOT` | Knowledge base location (default `~/.nb`) |
+| `KB_ROOT` | Knowledge base location (default `~/.kb`) |
 | `KB_NOTEBOOK` | Notebook for new notes |
 | `KBRC_PATH` / `NBRC_PATH` | Settings file locations |
 | `KB_*` / `NB_*` | Any setting, e.g. `KB_ENCRYPTION_TOOL=gpg` |

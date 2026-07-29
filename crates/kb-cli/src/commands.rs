@@ -11,11 +11,10 @@ use clap::{Args, Parser, Subcommand};
     name = "kb",
     version,
     about = "A fast Markdown knowledge base",
-    args_conflicts_with_subcommands = true,
     subcommand_negates_reqs = true
 )]
 pub struct Cli {
-    /// Knowledge base root (defaults to $KB_ROOT, then ~/.nb)
+    /// Knowledge base root (defaults to $KB_ROOT, then ~/.kb)
     #[arg(long, global = true, value_name = "DIR")]
     pub root: Option<PathBuf>,
 
@@ -1259,6 +1258,17 @@ pub struct InitArgs {
     /// Branch to clone
     #[arg(value_name = "BRANCH")]
     pub branch: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_init_after_a_global_root_option() {
+        let cli = Cli::try_parse_from(["kb", "--root", "/tmp/kb", "init"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Init(_))));
+    }
 }
 
 #[derive(Args)]
