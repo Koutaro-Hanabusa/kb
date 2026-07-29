@@ -8,26 +8,49 @@ use kb_core::{Hit, Note};
 #[derive(Debug, Clone, Copy)]
 pub struct Style {
     enabled: bool,
+    theme: kb_core::theme::Theme,
 }
 
 impl Style {
+    /// Decide styling from the terminal and the configured theme.
     pub fn detect() -> Self {
         // Honour the de facto standard for opting out of colour.
         let forced_off = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
-        Self { enabled: std::io::stdout().is_terminal() && !forced_off }
+        let settings = kb_core::settings::Settings::load().ok();
+        let read = |key: &str| settings.as_ref().and_then(|s| s.get(key));
+
+        Self {
+            enabled: std::io::stdout().is_terminal() && !forced_off,
+            theme: kb_core::theme::resolve(
+                read("color_theme").as_deref(),
+                read("color_primary").as_deref(),
+                read("color_secondary").as_deref(),
+            ),
+        }
     }
 
     #[cfg(test)]
     pub fn plain() -> Self {
-        Self { enabled: false }
+        Self { enabled: false, theme: kb_core::theme::DEFAULT }
+    }
+
+    /// Styling with colour forced on, for tests that have no terminal.
+    #[cfg(test)]
+    pub fn themed(theme: kb_core::theme::Theme) -> Self {
+        Self { enabled: true, theme }
     }
 
     fn wrap(&self, code: &str, text: &str) -> String {
         if self.enabled { format!("\u{1b}[{code}m{text}\u{1b}[0m") } else { text.to_string() }
     }
 
+    fn coloured(&self, colour: u8, text: &str) -> String {
+        self.wrap(&format!("38;5;{colour}"), text)
+    }
+
+    /// The colour to scan for: paths and notebook names.
     pub fn path(&self, text: &str) -> String {
-        self.wrap("36", text)
+        self.coloured(self.theme.primary, text)
     }
 
     pub fn title(&self, text: &str) -> String {
@@ -38,8 +61,9 @@ impl Style {
         self.wrap("2", text)
     }
 
+    /// Supporting detail: line numbers and other secondary marks.
     pub fn line_number(&self, text: &str) -> String {
-        self.wrap("32", text)
+        self.coloured(self.theme.secondary, text)
     }
 }
 
@@ -183,6 +207,25 @@ mod tests {
             title_match: false,
         };
         assert!(render_hits(&[hit], Style::plain()).contains("3 more match"));
+    }
+
+    /// The theme has to reach the actual output, not just `settings colors`.
+    #[test]
+    fn the_theme_decides_the_colours() {
+        let ocean = kb_core::theme::Theme::by_name("ocean").unwrap();
+        let style = Style::themed(ocean);
+
+        assert_eq!(style.path("x"), "\u{1b}[38;5;75mx\u{1b}[0m");
+        assert_eq!(style.line_number("1"), "\u{1b}[38;5;26m1\u{1b}[0m");
+
+        let rendered = render_notes(&[note("Title", "knowledge/a.md")], style);
+        assert!(rendered.contains("\u{1b}[38;5;75m"), "{rendered:?}");
+    }
+
+    #[test]
+    fn styling_off_emits_no_escapes_whatever_the_theme() {
+        let rendered = render_notes(&[note("Title", "knowledge/a.md")], Style::plain());
+        assert!(!rendered.contains('\u{1b}'));
     }
 
     #[test]

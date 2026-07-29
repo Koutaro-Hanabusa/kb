@@ -22,6 +22,7 @@ pub mod search;
 pub mod selector;
 pub mod settings;
 pub mod sync;
+pub mod theme;
 pub mod todo;
 pub mod workspace;
 

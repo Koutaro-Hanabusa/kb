@@ -247,6 +247,15 @@ pub enum SettingsCommand {
     Unset(SettingNameArgs),
     /// Open the settings file in $EDITOR
     Edit,
+    /// Show the colour palette, or the available themes
+    Colors(ColorsArgs),
+}
+
+#[derive(Args)]
+pub struct ColorsArgs {
+    /// A colour number to preview, or `themes` to list the themes
+    #[arg(value_name = "NUMBER|themes")]
+    pub target: Option<String>,
 }
 
 #[derive(Args)]

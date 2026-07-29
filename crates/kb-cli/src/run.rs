@@ -1395,6 +1395,36 @@ pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<(
             settings.unset(&name)?;
             writeln!(ctx.out, "unset {name}")?;
         }
+        Some(SettingsCommand::Colors(colors)) => {
+            use kb_core::theme;
+            match colors.target.as_deref() {
+                Some("themes") => {
+                    let active = settings.get("color_theme").unwrap_or_default();
+                    for entry in theme::THEMES {
+                        let marker = if entry.name == active { "*" } else { " " };
+                        writeln!(
+                            ctx.out,
+                            "{marker} {}{}\u{1b}[0m  {} / {}",
+                            theme::foreground(entry.primary),
+                            entry.name,
+                            entry.primary,
+                            entry.secondary
+                        )?;
+                    }
+                }
+                Some(number) => {
+                    let colour: u8 = number
+                        .parse()
+                        .with_context(|| format!("`{number}` is not a colour number"))?;
+                    writeln!(
+                        ctx.out,
+                        "{}{colour}\u{1b}[0m",
+                        theme::foreground(colour)
+                    )?;
+                }
+                None => write!(ctx.out, "{}", theme::palette())?,
+            }
+        }
         Some(SettingsCommand::Edit) => {
             let path = settings.path().to_path_buf();
             if !path.exists() {
