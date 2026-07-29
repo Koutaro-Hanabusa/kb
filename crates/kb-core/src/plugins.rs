@@ -92,6 +92,40 @@ pub fn install(root: &Path, source: &Path, force: bool) -> Result<Plugin> {
     Ok(Plugin { name, path: destination })
 }
 
+/// Download a plugin and install it.
+///
+/// The filename comes from the URL, so it has to carry a plugin extension —
+/// otherwise there is no telling what subcommand the file would provide.
+pub fn install_from_url(root: &Path, url: &str, force: bool) -> Result<Plugin> {
+    let name = url
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .map(|segment| segment.split(['?', '#']).next().unwrap_or(segment))
+        .context("cannot tell the filename from that URL")?;
+
+    if plugin_name(Path::new(name)).is_none() {
+        bail!(
+            "{name} is not a plugin filename (expected one of: {})",
+            PLUGIN_EXTS.iter().map(|e| format!(".{e}")).collect::<Vec<_>>().join(", ")
+        );
+    }
+
+    let body = crate::bookmark::fetch(url)?;
+
+    // Stage inside a temporary directory rather than renaming the file: the
+    // filename *is* the subcommand name, so it has to survive the download.
+    let staging = std::env::temp_dir().join(format!("kb-plugin-{}", std::process::id()));
+    std::fs::create_dir_all(&staging)
+        .with_context(|| format!("creating {}", staging.display()))?;
+    let staged = staging.join(name);
+    std::fs::write(&staged, body)
+        .with_context(|| format!("writing {}", staged.display()))?;
+
+    let installed = install(root, &staged, force);
+    let _ = std::fs::remove_dir_all(&staging);
+    installed
+}
+
 pub fn uninstall(root: &Path, name: &str) -> Result<Plugin> {
     let plugin = installed(root)
         .into_iter()
@@ -179,6 +213,23 @@ mod tests {
         uninstall(&root, "hello").unwrap();
         assert!(installed(&root).is_empty());
         assert!(uninstall(&root, "hello").is_err());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The filename is the subcommand name, so staging a download must not
+    /// rename the file on the way through.
+    #[test]
+    fn installing_keeps_the_name_the_source_had() {
+        let root = fixture("staged");
+        let staging = root.join("downloads");
+        std::fs::create_dir_all(&staging).unwrap();
+        let source = staging.join("greet.nb-plugin");
+        std::fs::write(&source, "#!/bin/sh\n").unwrap();
+
+        let plugin = install(&root, &source, false).unwrap();
+        assert_eq!(plugin.name, "greet");
+        assert_eq!(plugin.path.file_name().unwrap(), "greet.nb-plugin");
 
         std::fs::remove_dir_all(&root).unwrap();
     }

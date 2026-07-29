@@ -1135,23 +1135,32 @@ fn bookmark_path<W: Write>(ctx: &Ctx<'_, W>, target: &SelectorArgs) -> Result<Pa
 pub fn browse<W: Write>(ctx: &mut Ctx<'_, W>, args: &BrowseArgs) -> Result<()> {
     let url_path = browse_path(ctx, args)?;
 
+    // The subcommands carry their own copies of these flags.
+    let (print, gui, port) = match &args.command {
+        Some(
+            BrowseCommand::Add(target)
+            | BrowseCommand::Edit(target)
+            | BrowseCommand::Delete(target),
+        ) => (target.print, target.gui, target.port),
+        None => (args.print, args.gui, args.port),
+    };
+
     // `--print` renders one page and exits; no server, no browser.
-    if args.print {
+    if print {
         let html = kb_core::browse::handle(ctx.workspace, &url_path, None)?;
         write!(ctx.out, "{html}")?;
         return Ok(());
     }
 
-    let address = format!("http://localhost:{}{url_path}", args.port);
+    let address = format!("http://localhost:{port}{url_path}");
     writeln!(ctx.out, "{}", ctx.style.path(&address))?;
     writeln!(ctx.out, "{}", ctx.style.dim("Press Ctrl-C to stop."))?;
     ctx.out.flush()?;
 
-    if args.gui {
+    if gui {
         // Opening before the server is up would race; the browser retries, but
         // starting the listener first makes it a non-issue.
         let workspace = ctx.workspace.clone();
-        let port = args.port;
         let opened = address.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(150));
@@ -1159,7 +1168,7 @@ pub fn browse<W: Write>(ctx: &mut Ctx<'_, W>, args: &BrowseArgs) -> Result<()> {
         });
         return kb_core::browse::serve(&workspace, port);
     }
-    kb_core::browse::serve(ctx.workspace, args.port)
+    kb_core::browse::serve(ctx.workspace, port)
 }
 
 /// The URL path a browse invocation opens.
@@ -1168,6 +1177,20 @@ fn browse_path<W: Write>(ctx: &Ctx<'_, W>, args: &BrowseArgs) -> Result<String> 
         return Ok("/?--notebooks".to_string());
     }
     let notebook = ctx.notebook(None)?.name.clone();
+
+    // `browse add/edit/delete` open the same pages the web UI links to.
+    if let Some(command) = &args.command {
+        let (target, flag) = match command {
+            BrowseCommand::Add(target) => (target, "--add"),
+            BrowseCommand::Edit(target) => (target, "--edit"),
+            BrowseCommand::Delete(target) => (target, "--delete"),
+        };
+        let selector = match &target.selector {
+            Some(selector) => selector.clone(),
+            None => format!("{notebook}:"),
+        };
+        return Ok(format!("/{}?{flag}", kb_core::render::url_encode(&selector)));
+    }
 
     if let Some(tag) = &args.tag {
         let tag = tag.trim_start_matches('#');
@@ -1342,7 +1365,11 @@ pub fn plugins<W: Write>(ctx: &mut Ctx<'_, W>, args: &PluginsArgs) -> Result<()>
 
     match &args.command {
         Some(PluginsCommand::Install(install)) => {
-            let plugin = kb_core::plugins::install(&root, &install.path, install.force)?;
+            let plugin = if install.source.contains("://") {
+                kb_core::plugins::install_from_url(&root, &install.source, install.force)?
+            } else {
+                kb_core::plugins::install(&root, Path::new(&install.source), install.force)?
+            };
             writeln!(ctx.out, "Installed {} → {}", plugin.name, plugin.path.display())?;
         }
         Some(PluginsCommand::Uninstall(uninstall)) => {
@@ -1817,6 +1844,29 @@ pub fn export<W: Write>(ctx: &mut Ctx<'_, W>, args: &ExportArgs) -> Result<()> {
 // ─────────────────────────── env / subcommands / update ───────────────────────────
 
 pub fn env<W: Write>(ctx: &mut Ctx<'_, W>, args: &EnvArgs) -> Result<()> {
+    // `nb env install` fetches assets for its web UI; kb's is self-contained, so
+    // there is nothing to download — only external tools worth reporting on.
+    if matches!(args.command, Some(EnvCommand::Check)) {
+        for (tool, enables) in [
+            ("git", "sync, status, history"),
+            ("fzf", "pick, and browsing a folder with open/peek"),
+            ("glow", "rendered Markdown in the pager and fzf preview"),
+            ("bat", "syntax highlighting when glow is absent"),
+            ("pandoc", "export pandoc, and import --convert"),
+            ("openssl", "encrypted notes (default)"),
+            ("gpg", "encrypted notes when encryption_tool is gpg"),
+        ] {
+            let found = shell::has_command(tool);
+            writeln!(
+                ctx.out,
+                "{} {tool:<8} {}",
+                if found { "✓" } else { "·" },
+                ctx.style.dim(enables)
+            )?;
+        }
+        return Ok(());
+    }
+
     let notebook = ctx.notebook(None)?.name.clone();
     writeln!(ctx.out, "kb        {}", env!("CARGO_PKG_VERSION"))?;
     writeln!(ctx.out, "root      {}", ctx.workspace.root.display())?;
@@ -1838,6 +1888,107 @@ pub fn env<W: Write>(ctx: &mut Ctx<'_, W>, args: &EnvArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+// ─────────────────────────── completions ───────────────────────────
+
+/// Generate completions, or install them where the shell will find them.
+pub fn completions<W: Write>(ctx: &mut Ctx<'_, W>, args: &CompletionsArgs) -> Result<()> {
+    use clap::CommandFactory;
+    use clap_complete::Shell;
+
+    let (command, shell_arg, dir) = match &args.command {
+        Some(CompletionsCommand::Install(install)) => ("install", install.shell, install.dir.clone()),
+        Some(CompletionsCommand::Uninstall(remove)) => ("uninstall", remove.shell, remove.dir.clone()),
+        Some(CompletionsCommand::Check(check)) => ("check", check.shell, check.dir.clone()),
+        None => ("print", args.shell, None),
+    };
+
+    let shell = shell_arg.or_else(current_shell).context(
+        "cannot tell which shell to use; name one, e.g. `kb completions install zsh`",
+    )?;
+
+    if command == "print" {
+        clap_complete::generate(shell, &mut Cli::command(), "kb", &mut ctx.out);
+        return Ok(());
+    }
+
+    let dir = match dir {
+        Some(dir) => dir,
+        None => completion_dir(shell)?,
+    };
+    let path = dir.join(completion_filename(shell));
+
+    match command {
+        "check" => {
+            let state = if path.exists() { "installed" } else { "not installed" };
+            writeln!(ctx.out, "{state}: {}", path.display())?;
+        }
+        "uninstall" => {
+            if path.exists() {
+                std::fs::remove_file(&path)
+                    .with_context(|| format!("removing {}", path.display()))?;
+                writeln!(ctx.out, "Removed {}", path.display())?;
+            } else {
+                writeln!(ctx.out, "Nothing installed at {}", path.display())?;
+            }
+        }
+        _ => {
+            std::fs::create_dir_all(&dir)
+                .with_context(|| format!("creating {}", dir.display()))?;
+            let mut buffer: Vec<u8> = Vec::new();
+            clap_complete::generate(shell, &mut Cli::command(), "kb", &mut buffer);
+            std::fs::write(&path, buffer)
+                .with_context(|| format!("writing {}", path.display()))?;
+            writeln!(ctx.out, "Installed {}", path.display())?;
+            if matches!(shell, Shell::Zsh) {
+                writeln!(
+                    ctx.out,
+                    "{}",
+                    ctx.style.dim(&format!("Ensure {} is on $fpath.", dir.display()))
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn current_shell() -> Option<clap_complete::Shell> {
+    let shell = std::env::var("SHELL").ok()?;
+    let name = Path::new(&shell).file_name()?.to_string_lossy().into_owned();
+    name.parse().ok()
+}
+
+/// Where each shell looks for user completions.
+fn completion_dir(shell: clap_complete::Shell) -> Result<PathBuf> {
+    use clap_complete::Shell;
+    let home = PathBuf::from(std::env::var_os("HOME").context("no home directory")?);
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".local/share"));
+
+    Ok(match shell {
+        Shell::Zsh => home.join(".zfunc"),
+        Shell::Bash => data.join("bash-completion/completions"),
+        Shell::Fish => std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"))
+            .join("fish/completions"),
+        Shell::Elvish => home.join(".elvish/lib"),
+        Shell::PowerShell => home.join(".config/powershell"),
+        other => bail!("no known completion directory for {other}"),
+    })
+}
+
+fn completion_filename(shell: clap_complete::Shell) -> String {
+    use clap_complete::Shell;
+    match shell {
+        Shell::Zsh => "_kb".to_string(),
+        Shell::Fish => "kb.fish".to_string(),
+        Shell::Elvish => "kb.elv".to_string(),
+        Shell::PowerShell => "kb.ps1".to_string(),
+        _ => "kb".to_string(),
+    }
 }
 
 /// Copy a directory tree, including the git repository inside it.

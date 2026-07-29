@@ -207,9 +207,9 @@ pub enum PluginsCommand {
 
 #[derive(Args)]
 pub struct PluginInstallArgs {
-    /// Path to the plugin file
-    #[arg(value_name = "PATH")]
-    pub path: PathBuf,
+    /// Path or URL of the plugin file
+    #[arg(value_name = "PATH|URL")]
+    pub source: String,
 
     /// Replace an already-installed plugin
     #[arg(long)]
@@ -490,20 +490,56 @@ pub struct ExportPandocArgs {
 
 #[derive(Args)]
 pub struct CompletionsArgs {
+    #[command(subcommand)]
+    pub command: Option<CompletionsCommand>,
+
     /// Shell to generate completions for
     #[arg(value_name = "SHELL")]
-    pub shell: clap_complete::Shell,
+    pub shell: Option<clap_complete::Shell>,
+}
+
+#[derive(Subcommand)]
+pub enum CompletionsCommand {
+    /// Write completions to the shell's completion directory
+    Install(CompletionsInstallArgs),
+    /// Remove installed completions
+    Uninstall(CompletionsInstallArgs),
+    /// Report where completions are installed
+    Check(CompletionsInstallArgs),
+}
+
+#[derive(Args)]
+pub struct CompletionsInstallArgs {
+    /// Shell to install for (default: `$SHELL`)
+    #[arg(value_name = "SHELL")]
+    pub shell: Option<clap_complete::Shell>,
+
+    /// Directory to write into (default: the shell's usual location)
+    #[arg(long, value_name = "DIR")]
+    pub dir: Option<PathBuf>,
 }
 
 #[derive(Args)]
 pub struct EnvArgs {
+    #[command(subcommand)]
+    pub command: Option<EnvCommand>,
+
     /// Show paths and resolved settings
     #[arg(short, long)]
     pub long: bool,
 }
 
+#[derive(Subcommand)]
+pub enum EnvCommand {
+    /// Report which optional tools are present and what they enable
+    Check,
+}
+
 #[derive(Args)]
 pub struct BrowseArgs {
+    #[command(subcommand)]
+    pub command: Option<BrowseCommand>,
+
     /// Item, folder, or notebook to open
     #[arg(value_name = "SELECTOR")]
     pub selector: Option<String>,
@@ -531,6 +567,42 @@ pub struct BrowseArgs {
     /// Search for a tag
     #[arg(short = 't', long, visible_alias = "tags", value_name = "TAG")]
     pub tag: Option<String>,
+
+    /// Port to listen on
+    #[arg(long, value_name = "PORT", default_value_t = kb_core::browse::DEFAULT_PORT)]
+    pub port: u16,
+}
+
+#[derive(Subcommand)]
+pub enum BrowseCommand {
+    /// Open the add view
+    #[command(visible_aliases = ["a", "+"])]
+    Add(BrowseTargetArgs),
+    /// Open the edit view
+    #[command(visible_alias = "e")]
+    Edit(BrowseTargetArgs),
+    /// Open the delete view
+    #[command(visible_aliases = ["d", "-"])]
+    Delete(BrowseTargetArgs),
+}
+
+#[derive(Args)]
+pub struct BrowseTargetArgs {
+    /// Item, folder, or notebook
+    #[arg(value_name = "SELECTOR")]
+    pub selector: Option<String>,
+
+    /// Start the web server and keep it running
+    #[arg(short, long, visible_alias = "daemon")]
+    pub serve: bool,
+
+    /// Open in the system's web browser
+    #[arg(short, long)]
+    pub gui: bool,
+
+    /// Print the rendered HTML to standard output
+    #[arg(short, long)]
+    pub print: bool,
 
     /// Port to listen on
     #[arg(long, value_name = "PORT", default_value_t = kb_core::browse::DEFAULT_PORT)]

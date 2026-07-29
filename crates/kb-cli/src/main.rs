@@ -101,10 +101,7 @@ fn main() -> Result<()> {
                 "kb is managed by Nix; update it with `nix flake update kb` in your dotfiles."
             )?;
         }
-        Some(Command::Completions(args)) => {
-            use clap::CommandFactory;
-            clap_complete::generate(args.shell, &mut Cli::command(), "kb", &mut ctx.out);
-        }
+        Some(Command::Completions(args)) => run::completions(&mut ctx, args)?,
         Some(Command::Pin(args)) => run::pin(&mut ctx, args, true)?,
         Some(Command::Unpin(args)) => run::pin(&mut ctx, args, false)?,
         Some(Command::Archive(args)) => run::archive(&mut ctx, args, true)?,
