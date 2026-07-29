@@ -127,6 +127,36 @@ fn value_to_tags(value: &Value) -> Vec<String> {
     }
 }
 
+/// Set the `updated` field to `stamp`, leaving everything else byte-identical.
+///
+/// A note without frontmatter, or without an `updated` key, is returned
+/// unchanged — writing a header into a file that never had one would be a
+/// bigger change than an edit asked for.
+pub fn touch_updated(raw: &str, stamp: &str) -> String {
+    let doc = Document::split(raw);
+    let (Some(span), Some(fm)) = (&doc.span, &doc.frontmatter) else {
+        return raw.to_string();
+    };
+    if !fm.has("updated") {
+        return raw.to_string();
+    }
+
+    let block = &raw[span.start..span.end];
+    let mut out = String::with_capacity(raw.len());
+    out.push_str(&raw[..span.start]);
+    for line in block.lines() {
+        if line.trim_start().starts_with("updated:") {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            out.push_str(&format!("{indent}updated: {stamp}\n"));
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out.push_str(&raw[span.end..]);
+    out
+}
+
 /// Render a scalar as YAML, quoting only when the plain form would be ambiguous.
 ///
 /// Most titles here are Japanese prose that needs no quoting, so unconditional
@@ -249,6 +279,29 @@ mod tests {
         // delimiter when the scalar opens with it.
         assert_eq!(yaml_scalar("say \"hi\""), "say \"hi\"");
         assert_eq!(yaml_scalar("\"quoted\""), "\"\\\"quoted\\\"\"");
+    }
+
+    #[test]
+    fn touching_updates_only_that_line() {
+        let raw = "---\ntitle: T\ntags: [a]\ncreated: 2026-01-01T00:00:00+09:00\nupdated: 2026-01-01T00:00:00+09:00\n---\n\n# Body\n";
+        let touched = touch_updated(raw, "2026-07-29T13:30:00+09:00");
+
+        assert!(touched.contains("updated: 2026-07-29T13:30:00+09:00"));
+        assert!(touched.contains("created: 2026-01-01T00:00:00+09:00"));
+        assert!(touched.ends_with("\n# Body\n"));
+        assert_eq!(touched.lines().count(), raw.lines().count());
+    }
+
+    #[test]
+    fn touching_a_note_without_frontmatter_changes_nothing() {
+        let raw = "# Just a heading\n\nbody\n";
+        assert_eq!(touch_updated(raw, "2026-07-29T13:30:00+09:00"), raw);
+    }
+
+    #[test]
+    fn touching_without_an_updated_key_changes_nothing() {
+        let raw = "---\ntitle: T\n---\n\nbody\n";
+        assert_eq!(touch_updated(raw, "2026-07-29T13:30:00+09:00"), raw);
     }
 
     #[test]

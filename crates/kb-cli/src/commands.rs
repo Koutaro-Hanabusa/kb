@@ -133,11 +133,49 @@ pub enum Command {
     /// Remove an item's pin
     Unpin(SelectorArgs),
 
+    /// Browse notes in a web browser
+    Browse(BrowseArgs),
+
     /// Archive a notebook
     Archive(NotebookArgs),
 
     /// Remove a notebook's archived mark
     Unarchive(NotebookArgs),
+}
+
+#[derive(Args)]
+pub struct BrowseArgs {
+    /// Item, folder, or notebook to open
+    #[arg(value_name = "SELECTOR")]
+    pub selector: Option<String>,
+
+    /// Start the web server and keep it running
+    #[arg(short, long, visible_alias = "daemon")]
+    pub serve: bool,
+
+    /// Open in the system's web browser
+    #[arg(short, long)]
+    pub gui: bool,
+
+    /// Print the rendered HTML to standard output
+    #[arg(short, long)]
+    pub print: bool,
+
+    /// Browse notebooks
+    #[arg(short, long)]
+    pub notebooks: bool,
+
+    /// Open to the search results for this query
+    #[arg(short, long, value_name = "QUERY")]
+    pub query: Option<String>,
+
+    /// Search for a tag
+    #[arg(short = 't', long, visible_alias = "tags", value_name = "TAG")]
+    pub tag: Option<String>,
+
+    /// Port to listen on
+    #[arg(long, value_name = "PORT", default_value_t = kb_core::browse::DEFAULT_PORT)]
+    pub port: u16,
 }
 
 #[derive(Args)]

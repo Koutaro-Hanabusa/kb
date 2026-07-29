@@ -6,6 +6,7 @@
 //! a personal knowledge base reaches.
 
 pub mod bookmark;
+pub mod browse;
 pub mod create;
 pub mod frontmatter;
 pub mod git;
@@ -13,6 +14,7 @@ pub mod index;
 pub mod items;
 pub mod migrate;
 pub mod note;
+pub mod render;
 pub mod search;
 pub mod selector;
 pub mod sync;

@@ -336,6 +336,8 @@ pub fn edit<W: Write>(ctx: &mut Ctx<'_, W>, args: &EditArgs) -> Result<()> {
         format!("{}\n{}\n", existing.trim_end(), content.trim_end())
     };
 
+    let stamp = kb_core::note::format_timestamp(&jiff::Zoned::now());
+    let updated = kb_core::frontmatter::touch_updated(&updated, &stamp);
     std::fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
     writeln!(ctx.out, "{}", path.display())?;
     Ok(())
@@ -858,6 +860,58 @@ fn list_bookmarks<W: Write>(ctx: &mut Ctx<'_, W>, filters: &FilterArgs) -> Resul
 fn bookmark_path<W: Write>(ctx: &Ctx<'_, W>, target: &SelectorArgs) -> Result<PathBuf> {
     let input = target.selector.as_deref().context("no bookmark given")?;
     ctx.resolve_note(input)
+}
+
+// ─────────────────────────── browse ───────────────────────────
+
+pub fn browse<W: Write>(ctx: &mut Ctx<'_, W>, args: &BrowseArgs) -> Result<()> {
+    let url_path = browse_path(ctx, args)?;
+
+    // `--print` renders one page and exits; no server, no browser.
+    if args.print {
+        let html = kb_core::browse::handle(ctx.workspace, &url_path, None)?;
+        write!(ctx.out, "{html}")?;
+        return Ok(());
+    }
+
+    let address = format!("http://localhost:{}{url_path}", args.port);
+    writeln!(ctx.out, "{}", ctx.style.path(&address))?;
+    writeln!(ctx.out, "{}", ctx.style.dim("Press Ctrl-C to stop."))?;
+    ctx.out.flush()?;
+
+    if args.gui {
+        // Opening before the server is up would race; the browser retries, but
+        // starting the listener first makes it a non-issue.
+        let workspace = ctx.workspace.clone();
+        let port = args.port;
+        let opened = address.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = shell::open_url(&opened);
+        });
+        return kb_core::browse::serve(&workspace, port);
+    }
+    kb_core::browse::serve(ctx.workspace, args.port)
+}
+
+/// The URL path a browse invocation opens.
+fn browse_path<W: Write>(ctx: &Ctx<'_, W>, args: &BrowseArgs) -> Result<String> {
+    if args.notebooks {
+        return Ok("/?--notebooks".to_string());
+    }
+    let notebook = ctx.notebook(None)?.name.clone();
+
+    if let Some(tag) = &args.tag {
+        let tag = tag.trim_start_matches('#');
+        return Ok(format!("/{notebook}:?--query={}", kb_core::render::url_encode(&format!("#{tag}"))));
+    }
+    if let Some(query) = &args.query {
+        return Ok(format!("/{notebook}:?--query={}", kb_core::render::url_encode(query)));
+    }
+    match &args.selector {
+        Some(selector) => Ok(format!("/{}", kb_core::render::url_encode(selector))),
+        None => Ok(format!("/{notebook}:")),
+    }
 }
 
 // ─────────────────────────── todo / pin / archive ───────────────────────────

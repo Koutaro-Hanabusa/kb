@@ -69,6 +69,7 @@ fn main() -> Result<()> {
         Some(Command::Todo(args)) => run::todo(&mut ctx, args)?,
         Some(Command::Do(args)) => run::todo(&mut ctx, &todo_shortcut(args, true))?,
         Some(Command::Undo(args)) => run::todo(&mut ctx, &todo_shortcut(args, false))?,
+        Some(Command::Browse(args)) => run::browse(&mut ctx, args)?,
         Some(Command::Pin(args)) => run::pin(&mut ctx, args, true)?,
         Some(Command::Unpin(args)) => run::pin(&mut ctx, args, false)?,
         Some(Command::Archive(args)) => run::archive(&mut ctx, args, true)?,
