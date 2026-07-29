@@ -1,5 +1,7 @@
 # kb
 
+[日本語](README.ja.md)
+
 A fast Markdown knowledge base. Notes are plain files in git repositories, and
 `kb` speaks [`nb`](https://github.com/xwmx/nb)'s command language — same
 subcommands, same aliases, same ids, same file formats — while being roughly two
