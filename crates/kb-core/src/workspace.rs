@@ -10,6 +10,9 @@ use crate::note::Note;
 /// Environment variable that overrides the knowledge base location.
 pub const ROOT_ENV: &str = "KB_ROOT";
 
+/// Default directory name for a knowledge base under the user's home directory.
+pub const DEFAULT_ROOT_DIR: &str = ".kb";
+
 /// Environment variable that overrides which notebook new notes go to.
 pub const NOTEBOOK_ENV: &str = "KB_NOTEBOOK";
 
@@ -66,11 +69,13 @@ pub struct Workspace {
 
 impl Workspace {
     /// Locate the knowledge base, honouring `$KB_ROOT` and falling back to
-    /// `~/.nb`.
+    /// `~/.kb`.
     pub fn discover() -> Result<Self> {
         let root = match std::env::var_os(ROOT_ENV) {
             Some(value) => PathBuf::from(value),
-            None => home_dir().context("cannot determine the home directory")?.join(".nb"),
+            None => home_dir()
+                .context("cannot determine the home directory")?
+                .join(DEFAULT_ROOT_DIR),
         };
         Self::open(root)
     }
