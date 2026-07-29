@@ -727,6 +727,7 @@ pub fn notebooks<W: Write>(ctx: &mut Ctx<'_, W>, args: &NotebooksArgs) -> Result
                 )?;
             }
         }
+        Some(NotebooksCommand::Use(target)) => return use_notebook(ctx, target),
         Some(NotebooksCommand::Archive(target)) => return archive(ctx, target, true),
         Some(NotebooksCommand::Unarchive(target)) => return archive(ctx, target, false),
         Some(NotebooksCommand::Delete(delete)) => {
@@ -1241,6 +1242,7 @@ pub fn todo<W: Write>(ctx: &mut Ctx<'_, W>, args: &TodoArgs) -> Result<()> {
             writeln!(ctx.out, "{}", path.display())?;
             Ok(())
         }
+        Some(TodoCommand::Delete(remove)) => delete(ctx, remove),
         Some(TodoCommand::Do(target)) => set_todo(ctx, target, true),
         Some(TodoCommand::Undo(target)) => set_todo(ctx, target, false),
         Some(TodoCommand::Done(filters)) => list_todos(ctx, filters, TodoFilter::Done),

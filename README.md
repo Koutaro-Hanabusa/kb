@@ -153,20 +153,19 @@ Both files are *sourced*, not parsed, so they can branch at run time.
 - **Shared filters** — `-n/--notebook`, `-t/--tag`, `-s/--since 7d`, `--limit`
   work across the commands that select sets of notes.
 
-### Not implemented
+### Coverage
 
-The subcommands are all there; some of their sub-subcommands are not.
+Every `nb` subcommand and sub-subcommand resolves — 44 of the latter, checked
+mechanically against `nb help` rather than by eye.
 
-| Area | Missing |
-| --- | --- |
-| `notebooks` | `author`, `init`, `select`, `show`, `use` (use the top-level `kb use`) |
-| `remote` | `branches`, `delete`, `rename`, `reset` (only `set` / `remove`) |
-| `import` / `export` | `notebook`, and `export pandoc` — files only, no format conversion |
-| `settings` | `colors` (colour themes are not implemented) |
-| `browse` | `add` / `delete` / `edit` as CLI subcommands — the web UI has all three |
-| `env` | `install` / `update` (no bundled web assets to fetch) |
-| `completions` | `install` / `uninstall` — `kb completions <shell>` prints, you place it |
-| `plugins` | installing from a URL; local paths only |
+Two do less than their `nb` counterparts, because there is nothing for them to
+do here:
+
+- **`env install` / `env update`** fetch assets for `nb`'s web UI. `kb browse` is
+  self-contained, so `kb env check` reports on external tools instead.
+- **`notebooks select`** resolves a selector to its notebook and prints it.
+  `nb`'s version sets the current notebook without persisting, which only ever
+  meant "for the rest of this one invocation".
 
 ### Behavioural differences
 

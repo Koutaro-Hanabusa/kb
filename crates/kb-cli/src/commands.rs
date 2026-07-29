@@ -626,6 +626,8 @@ pub struct TodoArgs {
 pub enum TodoCommand {
     /// Add a todo
     Add(TodoAddArgs),
+    /// Delete a todo
+    Delete(DeleteArgs),
     /// List open todos
     List(TodoListArgs),
     /// Mark a todo done
@@ -1062,6 +1064,8 @@ pub enum NotebooksCommand {
     Select(NotebookSelectArgs),
     /// Print information about a notebook
     Show(NotebookShowArgs),
+    /// Switch to a notebook
+    Use(UseArgs),
     /// Print whether a notebook is archived
     Status(NotebookArgs),
     /// Archive a notebook
