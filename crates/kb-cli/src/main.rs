@@ -65,6 +65,7 @@ fn main() -> Result<()> {
         Some(Command::Reconcile(args)) => run::reconcile(&mut ctx, args)?,
         Some(Command::Tags(args)) => run::tags(&mut ctx, args)?,
         Some(Command::Migrate(args)) => run::migrate_notes(&mut ctx, args)?,
+        Some(Command::Bookmark(args)) => run::bookmark(&mut ctx, args)?,
         Some(Command::Init(_)) | Some(Command::Pick(_)) => unreachable!("handled above"),
 
         // No subcommand: a selector shows that item, and nothing lists the

@@ -5,6 +5,7 @@
 //! operation walks the tree directly, which stays comfortably fast at the sizes
 //! a personal knowledge base reaches.
 
+pub mod bookmark;
 pub mod create;
 pub mod frontmatter;
 pub mod git;

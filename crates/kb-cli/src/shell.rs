@@ -30,6 +30,19 @@ pub fn page(path: &Path) -> Result<()> {
     launch(&pager, path)
 }
 
+/// Open a URL in the browser.
+pub fn open_url(url: &str) -> Result<()> {
+    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    if !has_command(opener) {
+        bail!("no way to open {url}: {opener} is not on PATH");
+    }
+    let status = Command::new(opener).arg(url).status().with_context(|| format!("running {opener}"))?;
+    if !status.success() {
+        bail!("{opener} exited with {status}");
+    }
+    Ok(())
+}
+
 /// Hand a file to the system's preferred application.
 pub fn open_externally(path: &Path) -> Result<()> {
     let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };

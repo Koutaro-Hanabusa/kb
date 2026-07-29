@@ -112,6 +112,80 @@ pub enum Command {
 
     /// Add missing frontmatter to existing notes
     Migrate(MigrateArgs),
+
+    /// Bookmark a URL, or list bookmarks
+    #[command(visible_alias = "bm")]
+    Bookmark(BookmarkArgs),
+}
+
+#[derive(Args)]
+pub struct BookmarkArgs {
+    #[command(subcommand)]
+    pub command: Option<BookmarkCommand>,
+
+    /// URLs to bookmark
+    #[arg(value_name = "URL")]
+    pub urls: Vec<String>,
+
+    #[command(flatten)]
+    pub opts: BookmarkOpts,
+}
+
+#[derive(Args, Default)]
+pub struct BookmarkOpts {
+    /// A comment or description for this bookmark
+    #[arg(short, long, value_name = "COMMENT")]
+    pub comment: Option<String>,
+
+    /// A quote or excerpt from the saved page
+    #[arg(short, long, visible_alias = "excerpt", value_name = "QUOTE")]
+    pub quote: Option<String>,
+
+    /// A comma-separated list of tags
+    #[arg(short, long, value_name = "TAGS", value_delimiter = ',')]
+    pub tags: Vec<String>,
+
+    /// A URL or selector related to this page; repeat for several
+    #[arg(short, long, value_name = "URL|SELECTOR")]
+    pub related: Vec<String>,
+
+    /// The filename for the bookmark
+    #[arg(short, long, value_name = "FILENAME")]
+    pub filename: Option<String>,
+
+    /// The bookmark title (default: the page's own <title>)
+    #[arg(long, value_name = "TITLE")]
+    pub title: Option<String>,
+
+    /// Add within the folder at this path
+    #[arg(long, value_name = "FOLDER")]
+    pub folder: Option<String>,
+
+    /// Don't request or download the target page
+    #[arg(long)]
+    pub no_request: bool,
+
+    /// Save the page source as HTML
+    #[arg(long)]
+    pub save_source: bool,
+}
+
+#[derive(Subcommand)]
+pub enum BookmarkCommand {
+    /// List bookmarks
+    List(FilterArgs),
+    /// Print a bookmark's URL
+    Url(SelectorArgs),
+    /// Open a bookmark's URL in the browser
+    Open(SelectorArgs),
+    /// View a bookmark in the terminal
+    Peek(SelectorArgs),
+    /// Edit a bookmark
+    Edit(EditArgs),
+    /// Delete a bookmark
+    Delete(DeleteArgs),
+    /// Search bookmarks
+    Search(SearchArgs),
 }
 
 /// Filters shared by the commands that select sets of notes.

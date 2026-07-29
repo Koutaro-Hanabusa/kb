@@ -773,6 +773,93 @@ pub fn migrate_notes<W: Write>(ctx: &mut Ctx<'_, W>, args: &MigrateArgs) -> Resu
     Ok(())
 }
 
+// ─────────────────────────── bookmark ───────────────────────────
+
+pub fn bookmark<W: Write>(ctx: &mut Ctx<'_, W>, args: &BookmarkArgs) -> Result<()> {
+    match &args.command {
+        Some(BookmarkCommand::List(filters)) => return list_bookmarks(ctx, filters),
+        Some(BookmarkCommand::Url(target)) => {
+            let path = bookmark_path(ctx, target)?;
+            let raw = std::fs::read_to_string(&path)?;
+            let url = kb_core::bookmark::url_of(&raw).context("no URL in that bookmark")?;
+            writeln!(ctx.out, "{url}")?;
+            return Ok(());
+        }
+        Some(BookmarkCommand::Open(target)) => {
+            let path = bookmark_path(ctx, target)?;
+            let raw = std::fs::read_to_string(&path)?;
+            let url = kb_core::bookmark::url_of(&raw).context("no URL in that bookmark")?;
+            ctx.out.flush()?;
+            return shell::open_url(&url);
+        }
+        Some(BookmarkCommand::Peek(target)) => {
+            let path = bookmark_path(ctx, target)?;
+            ctx.out.flush()?;
+            return shell::page(&path);
+        }
+        Some(BookmarkCommand::Edit(edit_args)) => return edit(ctx, edit_args),
+        Some(BookmarkCommand::Delete(delete_args)) => return delete(ctx, delete_args),
+        Some(BookmarkCommand::Search(search_args)) => {
+            // Same search, narrowed to bookmarks.
+            let hits = {
+                let query = Query {
+                    pattern: search_args.pattern.clone(),
+                    fixed_string: search_args.fixed_string,
+                    max_matches_per_note: Some(search_args.max_matches),
+                    ..to_query(&search_args.filters)?
+                };
+                let mut hits = search::search(ctx.workspace, &query)?;
+                hits.retain(|hit| kb_core::bookmark::is_bookmark(&hit.note.path));
+                hits
+            };
+            write!(ctx.out, "{}", output::render_hits(&hits, ctx.style))?;
+            return Ok(());
+        }
+        None => {}
+    }
+
+    if args.urls.is_empty() {
+        return list_bookmarks(ctx, &FilterArgs::default());
+    }
+
+    let folder = args.opts.folder.clone().unwrap_or_default();
+    let parsed_folder = Selector::parse(&folder);
+    let notebook = ctx.notebook(parsed_folder.notebook.as_deref())?.clone();
+    let dir = parsed_folder.folder_path().to_string_lossy().into_owned();
+
+    for url in &args.urls {
+        let spec = kb_core::bookmark::NewBookmark {
+            url: url.clone(),
+            title: args.opts.title.clone(),
+            comment: args.opts.comment.clone(),
+            quote: args.opts.quote.clone(),
+            tags: args.opts.tags.clone(),
+            related: args.opts.related.clone(),
+            filename: args.opts.filename.clone(),
+            no_request: args.opts.no_request,
+            save_source: args.opts.save_source,
+        };
+        let (path, source) = kb_core::bookmark::create(&notebook, &dir, &spec, &jiff::Zoned::now())?;
+        writeln!(ctx.out, "{}", path.display())?;
+        if let Some(source) = source {
+            writeln!(ctx.out, "{}", source.display())?;
+        }
+    }
+    Ok(())
+}
+
+fn list_bookmarks<W: Write>(ctx: &mut Ctx<'_, W>, filters: &FilterArgs) -> Result<()> {
+    let mut notes = search::filter_notes(ctx.workspace, &to_query(filters)?)?;
+    notes.retain(|note| kb_core::bookmark::is_bookmark(&note.path));
+    write!(ctx.out, "{}", output::render_notes(&notes, ctx.style))?;
+    Ok(())
+}
+
+fn bookmark_path<W: Write>(ctx: &Ctx<'_, W>, target: &SelectorArgs) -> Result<PathBuf> {
+    let input = target.selector.as_deref().context("no bookmark given")?;
+    ctx.resolve_note(input)
+}
+
 // ─────────────────────────── helpers ───────────────────────────
 
 fn to_query(filters: &FilterArgs) -> Result<Query> {
