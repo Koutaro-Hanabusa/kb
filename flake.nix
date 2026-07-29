@@ -8,6 +8,7 @@
   outputs =
     { self, nixpkgs, ... }:
     let
+      cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
       systems = [
         "aarch64-darwin"
         "x86_64-darwin"
@@ -22,7 +23,7 @@
       packages = forAllSystems (pkgs: rec {
         kb = pkgs.rustPlatform.buildRustPackage {
           pname = "kb";
-          version = "0.1.0";
+          version = cargoToml.workspace.package.version;
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
 

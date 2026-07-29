@@ -1,0 +1,6 @@
+[tagpr]
+releaseBranch = "master"
+versionFile = "Cargo.toml"
+vPrefix = true
+changelog = true
+release = true

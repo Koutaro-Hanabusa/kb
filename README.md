@@ -53,6 +53,19 @@ Nothing else is required to run. `git` is needed for `sync`, `status`, and
 `history`; `fzf`, `glow`, `bat`, `openssl`, and `gpg` are used when present and
 skipped when not. `kb env --long` reports which of them it found.
 
+## Releases
+
+[`tagpr`](https://github.com/Songmu/tagpr) maintains a release PR for changes
+merged to `master`. Merging that PR updates the version in `Cargo.toml`, creates
+a `v<version>` tag, and publishes a GitHub Release; it never publishes to
+crates.io. The Nix package reads the same `Cargo.toml` version, so its metadata
+stays in sync automatically.
+
+Use the `minor` or `major` label on a merged pull request to request that kind
+of SemVer bump; otherwise tagpr proposes a patch release. Before the workflow
+can create its release PR, enable **Allow GitHub Actions to create and approve
+pull requests** under **Settings → Actions → General → Workflow permissions**.
+
 ### First run
 
 Point `kb` at an existing `nb` knowledge base and it just works — same layout,
