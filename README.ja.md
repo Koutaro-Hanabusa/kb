@@ -69,13 +69,13 @@ and approve pull requests** を有効にしてください。
 既存の `nb` ナレッジベースを指定すれば、レイアウトも ID もそのまま使えます。
 
 ```sh
-kb ls                       # 既定は ~/.nb、または $KB_ROOT
+KB_ROOT=~/.nb kb ls         # 新規の kb インストールでは ~/.kb が既定
 ```
 
 新規に始める場合はこちらです。
 
 ```sh
-kb init                     # ~/.nb/home を Git リポジトリとして作成
+kb init                     # ~/.kb/home を Git リポジトリとして作成
 ```
 
 ## 速度
@@ -103,7 +103,7 @@ macOS、ウォームキャッシュで 811 ノート / 13.5 MB を計測しま�
 Markdown のディレクトリです。
 
 ```
-~/.nb/                  # または $KB_ROOT
+~/.kb/                  # または $KB_ROOT
 ├── .current            # `kb use` で選択したノートブック
 ├── home/               # ノートブック
 │   ├── .index          # このディレクトリの ID
@@ -268,7 +268,7 @@ fi
 
 | 変数 | 効果 |
 | --- | --- |
-| `KB_ROOT` | ナレッジベースの場所（既定は `~/.nb`） |
+| `KB_ROOT` | ナレッジベースの場所（既定は `~/.kb`） |
 | `KB_NOTEBOOK` | 新しいノートを作るノートブック |
 | `KBRC_PATH` / `NBRC_PATH` | 設定ファイルの場所 |
 | `KB_*` / `NB_*` | 任意の設定。例: `KB_ENCRYPTION_TOOL=gpg` |
