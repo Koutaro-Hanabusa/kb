@@ -18,6 +18,13 @@ use run::{Ctx, ViewMode};
 
 fn main() -> Result<()> {
     restore_sigpipe();
+
+    // A word that is not a built-in subcommand may name a plugin. This has to
+    // be settled before clap parses, because the bare `kb <selector>` form
+    // would otherwise swallow it.
+    if let Some(result) = dispatch_plugin() {
+        return result;
+    }
     let cli = Cli::parse();
 
     // `kb init` runs before a knowledge base exists, so it cannot open one.
@@ -80,6 +87,7 @@ fn main() -> Result<()> {
         Some(Command::Import(args)) => run::import(&mut ctx, args)?,
         Some(Command::Export(args)) => run::export(&mut ctx, args)?,
         Some(Command::Env(args)) => run::env(&mut ctx, args)?,
+        Some(Command::Plugins(args)) => run::plugins(&mut ctx, args)?,
         Some(Command::Subcommands) => {
             use clap::CommandFactory;
             for sub in Cli::command().get_subcommands() {
@@ -122,6 +130,61 @@ fn main() -> Result<()> {
 
     out.flush()?;
     Ok(())
+}
+
+/// Run a plugin if the first non-option argument names one.
+///
+/// Returns `None` when the argument is a built-in or no such plugin exists, so
+/// the caller falls through to normal parsing.
+fn dispatch_plugin() -> Option<Result<()>> {
+    let mut args = std::env::args().skip(1).peekable();
+    let mut root: Option<std::path::PathBuf> = None;
+
+    // Step over global options to reach the first word.
+    while let Some(arg) = args.peek() {
+        if arg == "--root" {
+            args.next();
+            root = args.next().map(std::path::PathBuf::from);
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--root=") {
+            root = Some(std::path::PathBuf::from(value));
+            args.next();
+            continue;
+        }
+        if arg.starts_with('-') {
+            args.next();
+            continue;
+        }
+        break;
+    }
+
+    let name = args.next()?;
+    if is_builtin(&name) {
+        return None;
+    }
+
+    let workspace = match root {
+        Some(root) => Workspace::open(root),
+        None => Workspace::discover(),
+    }
+    .ok()?;
+    let plugin = kb_core::plugins::find(&workspace.root, &name)?;
+
+    Some((|| {
+        let rest: Vec<String> = args.collect();
+        let notebook = workspace.default_notebook()?;
+        let code = kb_core::plugins::execute(&plugin, &notebook.root, &rest)?;
+        std::process::exit(code);
+    })())
+}
+
+/// Whether `name` is a subcommand or alias `kb` already provides.
+fn is_builtin(name: &str) -> bool {
+    use clap::CommandFactory;
+    Cli::command().get_subcommands().any(|sub| {
+        sub.get_name() == name || sub.get_all_aliases().any(|alias| alias == name)
+    })
 }
 
 /// Die quietly when a pipe closes, the way every other CLI does.

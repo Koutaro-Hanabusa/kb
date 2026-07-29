@@ -1067,6 +1067,46 @@ fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
         .expect("an unused filename exists")
 }
 
+// ─────────────────────────── plugins ───────────────────────────
+
+pub fn plugins<W: Write>(ctx: &mut Ctx<'_, W>, args: &PluginsArgs) -> Result<()> {
+    let root = ctx.workspace.root.clone();
+
+    match &args.command {
+        Some(PluginsCommand::Install(install)) => {
+            let plugin = kb_core::plugins::install(&root, &install.path, install.force)?;
+            writeln!(ctx.out, "Installed {} → {}", plugin.name, plugin.path.display())?;
+        }
+        Some(PluginsCommand::Uninstall(uninstall)) => {
+            if !uninstall.force {
+                ctx.out.flush()?;
+                if !shell::confirm(&format!("Uninstall plugin {}?", uninstall.name))? {
+                    writeln!(ctx.out, "Cancelled.")?;
+                    return Ok(());
+                }
+            }
+            let plugin = kb_core::plugins::uninstall(&root, &uninstall.name)?;
+            writeln!(ctx.out, "Uninstalled {}", plugin.name)?;
+        }
+        None => {
+            let installed = kb_core::plugins::installed(&root);
+            let matching = installed
+                .iter()
+                .filter(|plugin| args.name.as_ref().is_none_or(|name| &plugin.name == name));
+
+            for plugin in matching {
+                if args.paths {
+                    writeln!(ctx.out, "{}", plugin.path.display())?;
+                } else {
+                    let kind = if plugin.is_theme() { " (theme)" } else { "" };
+                    writeln!(ctx.out, "{}{kind}", plugin.name)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 // ─────────────────────────── settings ───────────────────────────
 
 pub fn settings<W: Write>(ctx: &mut Ctx<'_, W>, args: &SettingsArgs) -> Result<()> {

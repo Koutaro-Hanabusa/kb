@@ -166,6 +166,10 @@ pub enum Command {
     /// Print the environment kb is running in
     Env(EnvArgs),
 
+    /// Manage plugins and themes
+    #[command(visible_alias = "plugin")]
+    Plugins(PluginsArgs),
+
     /// List every subcommand
     Subcommands,
 
@@ -177,6 +181,50 @@ pub enum Command {
 
     /// Remove a notebook's archived mark
     Unarchive(NotebookArgs),
+}
+
+#[derive(Args)]
+pub struct PluginsArgs {
+    #[command(subcommand)]
+    pub command: Option<PluginsCommand>,
+
+    /// Show only this plugin
+    #[arg(value_name = "NAME")]
+    pub name: Option<String>,
+
+    /// Print the full path to each plugin
+    #[arg(long)]
+    pub paths: bool,
+}
+
+#[derive(Subcommand)]
+pub enum PluginsCommand {
+    /// Install a plugin from a path
+    Install(PluginInstallArgs),
+    /// Uninstall a plugin
+    Uninstall(PluginUninstallArgs),
+}
+
+#[derive(Args)]
+pub struct PluginInstallArgs {
+    /// Path to the plugin file
+    #[arg(value_name = "PATH")]
+    pub path: PathBuf,
+
+    /// Replace an already-installed plugin
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Args)]
+pub struct PluginUninstallArgs {
+    /// Plugin name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+
+    /// Skip the confirmation prompt
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Args)]

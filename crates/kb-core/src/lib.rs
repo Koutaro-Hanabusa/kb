@@ -14,6 +14,7 @@ pub mod index;
 pub mod items;
 pub mod migrate;
 pub mod note;
+pub mod plugins;
 pub mod render;
 pub mod search;
 pub mod selector;
