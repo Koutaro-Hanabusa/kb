@@ -286,10 +286,19 @@ pub struct RemoteArgs {
 
 #[derive(Subcommand)]
 pub enum RemoteCommand {
-    /// Set the remote URL
+    /// Set the remote URL and branch
     Set(RemoteSetArgs),
     /// Remove the remote
+    #[command(visible_alias = "unset")]
     Remove(RemoteRemoveArgs),
+    /// List branches on the remote
+    Branches(RemoteBranchesArgs),
+    /// Delete a branch from the remote
+    Delete(RemoteBranchArgs),
+    /// Rename a branch on the remote
+    Rename(RemoteRenameArgs),
+    /// Reset a branch on the remote to an empty state
+    Reset(RemoteBranchArgs),
 }
 
 #[derive(Args)]
@@ -298,9 +307,58 @@ pub struct RemoteSetArgs {
     #[arg(value_name = "URL")]
     pub url: String,
 
+    /// Branch to track
+    #[arg(value_name = "BRANCH")]
+    pub branch: Option<String>,
+
     /// Notebook to change
     #[arg(short = 'n', long, value_name = "NAME")]
     pub notebook: Option<String>,
+}
+
+#[derive(Args)]
+pub struct RemoteBranchesArgs {
+    /// Remote to inspect (default: the notebook's own remote)
+    #[arg(value_name = "URL")]
+    pub url: Option<String>,
+
+    /// Notebook to inspect
+    #[arg(short = 'n', long, value_name = "NAME")]
+    pub notebook: Option<String>,
+}
+
+#[derive(Args)]
+pub struct RemoteBranchArgs {
+    /// Branch name
+    #[arg(value_name = "BRANCH")]
+    pub branch: String,
+
+    /// Notebook to change
+    #[arg(short = 'n', long, value_name = "NAME")]
+    pub notebook: Option<String>,
+
+    /// Skip the confirmation prompt
+    #[arg(short, long)]
+    pub force: bool,
+}
+
+#[derive(Args)]
+pub struct RemoteRenameArgs {
+    /// Branch to rename (default: the current branch)
+    #[arg(value_name = "BRANCH")]
+    pub branch: Option<String>,
+
+    /// New name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+
+    /// Notebook to change
+    #[arg(short = 'n', long, value_name = "NAME")]
+    pub notebook: Option<String>,
+
+    /// Skip the confirmation prompt
+    #[arg(short, long)]
+    pub force: bool,
 }
 
 #[derive(Args)]
@@ -838,12 +896,135 @@ pub struct NotebooksArgs {
 pub enum NotebooksCommand {
     /// Print the current notebook
     Current(CurrentArgs),
-    /// Add a notebook
-    Add(NotebookNameArgs),
+    /// Create a notebook, optionally cloning a remote
+    #[command(visible_aliases = ["create", "new"])]
+    Add(NotebookAddArgs),
     /// Delete a notebook
     Delete(DeleteNotebookArgs),
     /// Rename a notebook
+    #[command(visible_aliases = ["move", "mv"])]
     Rename(RenameNotebookArgs),
+    /// Configure the commit author for a notebook
+    Author(AuthorArgs),
+    /// Create a notebook at a path, outside the knowledge base
+    Init(NotebookInitArgs),
+    /// Copy a notebook out to a path
+    Export(NotebookExportArgs),
+    /// Bring a notebook at a path into the knowledge base
+    Import(NotebookImportArgs),
+    /// Open a notebook directory in the system file browser
+    #[command(visible_alias = "o")]
+    Open(NotebookArgs),
+    /// Open a notebook directory in a terminal file browser
+    #[command(visible_alias = "p")]
+    Peek(NotebookArgs),
+    /// Resolve a selector to its notebook, without persisting the choice
+    Select(NotebookSelectArgs),
+    /// Print information about a notebook
+    Show(NotebookShowArgs),
+    /// Print whether a notebook is archived
+    Status(NotebookArgs),
+    /// Archive a notebook
+    Archive(NotebookArgs),
+    /// Remove a notebook's archived mark
+    Unarchive(NotebookArgs),
+}
+
+#[derive(Args)]
+pub struct NotebookAddArgs {
+    /// Name of the notebook
+    #[arg(value_name = "NAME")]
+    pub name: String,
+
+    /// Clone this remote instead of starting empty
+    #[arg(value_name = "REMOTE_URL")]
+    pub remote: Option<String>,
+
+    /// Branch to clone
+    #[arg(value_name = "BRANCH")]
+    pub branch: Option<String>,
+
+    /// Commit author email for this notebook
+    #[arg(long, value_name = "EMAIL")]
+    pub email: Option<String>,
+
+    /// Commit author name for this notebook
+    #[arg(long, value_name = "NAME")]
+    pub author_name: Option<String>,
+}
+
+#[derive(Args)]
+pub struct AuthorArgs {
+    /// Notebook to configure
+    #[arg(value_name = "NOTEBOOK")]
+    pub notebook: Option<String>,
+
+    /// Commit author email
+    #[arg(long, value_name = "EMAIL")]
+    pub email: Option<String>,
+
+    /// Commit author name
+    #[arg(long, value_name = "NAME")]
+    pub name: Option<String>,
+}
+
+#[derive(Args)]
+pub struct NotebookInitArgs {
+    /// Where to create it (default: the current directory)
+    #[arg(value_name = "PATH")]
+    pub path: Option<PathBuf>,
+
+    /// Clone this remote instead of starting empty
+    #[arg(value_name = "REMOTE_URL")]
+    pub remote: Option<String>,
+
+    /// Branch to clone
+    #[arg(value_name = "BRANCH")]
+    pub branch: Option<String>,
+}
+
+#[derive(Args)]
+pub struct NotebookExportArgs {
+    /// Notebook to export
+    #[arg(value_name = "NAME")]
+    pub name: String,
+
+    /// Destination (default: the current directory)
+    #[arg(value_name = "PATH")]
+    pub path: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub struct NotebookImportArgs {
+    /// Directory to import
+    #[arg(value_name = "PATH")]
+    pub path: PathBuf,
+
+    /// Name to give it (default: the directory's name)
+    #[arg(value_name = "NAME")]
+    pub name: Option<String>,
+}
+
+#[derive(Args)]
+pub struct NotebookSelectArgs {
+    /// Selector, e.g. `work:knowledge/3`
+    #[arg(value_name = "SELECTOR")]
+    pub selector: String,
+}
+
+#[derive(Args)]
+pub struct NotebookShowArgs {
+    /// Notebook to describe
+    #[arg(value_name = "NAME")]
+    pub name: Option<String>,
+
+    /// Print only the path
+    #[arg(long)]
+    pub path: bool,
+
+    /// Print only the name
+    #[arg(long)]
+    pub name_only: bool,
 }
 
 #[derive(Args)]

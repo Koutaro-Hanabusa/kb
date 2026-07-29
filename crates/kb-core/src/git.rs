@@ -152,6 +152,25 @@ pub fn current_branch(repo: &Path) -> Result<String> {
     Ok(run(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string())
 }
 
+/// Set the commit author recorded for this repository.
+pub fn set_author(repo: &Path, name: Option<&str>, email: Option<&str>) -> Result<()> {
+    if let Some(name) = name {
+        run(repo, &["config", "user.name", name])?;
+    }
+    if let Some(email) = email {
+        run(repo, &["config", "user.email", email])?;
+    }
+    Ok(())
+}
+
+/// The commit author configured for this repository, as `(name, email)`.
+pub fn author(repo: &Path) -> (Option<String>, Option<String>) {
+    let read = |key: &str| {
+        run(repo, &["config", "--get", key]).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    };
+    (read("user.name"), read("user.email"))
+}
+
 pub fn remote_url(repo: &Path) -> Result<String> {
     Ok(run(repo, &["remote", "get-url", "origin"])?.trim().to_string())
 }
@@ -163,6 +182,86 @@ pub fn set_remote(repo: &Path, url: &str) -> Result<()> {
     } else {
         run(repo, &["remote", "add", "origin", url]).map(|_| ())
     }
+}
+
+/// Track `branch` on `origin` for the current branch.
+pub fn set_upstream(repo: &Path, branch: &str) -> Result<()> {
+    run(repo, &["fetch", "origin", branch])?;
+    run(repo, &["branch", "--set-upstream-to", &format!("origin/{branch}")]).map(|_| ())
+}
+
+/// Branch names on a remote.
+///
+/// Reads them from the remote itself rather than local tracking refs, so the
+/// answer reflects what is actually there.
+pub fn remote_branches(repo: &Path, url: Option<&str>) -> Result<Vec<String>> {
+    let target = url.unwrap_or("origin");
+    let output = run(repo, &["ls-remote", "--heads", target])?;
+    Ok(output
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .filter_map(|(_, refname)| refname.strip_prefix("refs/heads/"))
+        .map(str::to_string)
+        .collect())
+}
+
+/// The branch the remote's HEAD points at, if it advertises one.
+pub fn remote_head(repo: &Path) -> Option<String> {
+    let output = run(repo, &["ls-remote", "--symref", "origin", "HEAD"]).ok()?;
+    output.lines().find_map(|line| {
+        line.strip_prefix("ref: refs/heads/")?.split_whitespace().next().map(str::to_string)
+    })
+}
+
+/// Refuse early when git will not allow a branch to be removed.
+///
+/// A remote will not delete the branch its HEAD points at, so both delete and
+/// rename fail on it — `nb` documents the same limitation. Checking first turns
+/// a confusing push error into a clear one, and stops rename from leaving the
+/// new branch behind next to the old.
+fn ensure_deletable(repo: &Path, branch: &str) -> Result<()> {
+    if remote_head(repo).as_deref() == Some(branch) {
+        bail!(
+            "`{branch}` is the remote's default branch and git will not delete it; \
+             point the remote's HEAD at another branch first"
+        );
+    }
+    Ok(())
+}
+
+pub fn delete_remote_branch(repo: &Path, branch: &str) -> Result<()> {
+    ensure_deletable(repo, branch)?;
+    run(repo, &["push", "origin", "--delete", branch]).map(|_| ())
+}
+
+/// Rename a branch on the remote: push it under the new name, drop the old one.
+pub fn rename_remote_branch(repo: &Path, from: &str, to: &str) -> Result<()> {
+    ensure_deletable(repo, from)?;
+    run(repo, &["fetch", "origin", from])?;
+    run(repo, &["push", "origin", &format!("refs/remotes/origin/{from}:refs/heads/{to}")])?;
+    delete_remote_branch(repo, from)
+}
+
+/// Replace a remote branch with an empty one, discarding its history.
+///
+/// The new branch is an orphan with a single empty commit, built in a temporary
+/// worktree so the caller's checkout is never disturbed.
+pub fn reset_remote_branch(repo: &Path, branch: &str) -> Result<()> {
+    let worktree = repo.join(format!(".kb-reset-{branch}"));
+    let worktree_arg = worktree.to_string_lossy().into_owned();
+
+    run(repo, &["worktree", "add", "--detach", &worktree_arg])?;
+    let result = (|| -> Result<()> {
+        run(&worktree, &["checkout", "--orphan", branch])?;
+        run(&worktree, &["reset", "--hard"])?;
+        run(&worktree, &["commit", "--allow-empty", "-m", "Initial commit"])?;
+        run(&worktree, &["push", "--force", "origin", branch])?;
+        Ok(())
+    })();
+
+    // Clean up whether or not the reset worked.
+    let _ = run(repo, &["worktree", "remove", "--force", &worktree_arg]);
+    result
 }
 
 pub fn remove_remote(repo: &Path) -> Result<()> {
@@ -247,6 +346,92 @@ mod tests {
         commit_file(&repo, "日本語のノート.md", "text", "2026-03-01T12:00:00+09:00");
         let hist = history(&repo).unwrap();
         assert!(hist.contains_key(Path::new("日本語のノート.md")));
+        std::fs::remove_dir_all(&repo).unwrap();
+    }
+
+    /// Set up a repo with a bare remote and one pushed branch.
+    fn with_remote(name: &str) -> (PathBuf, PathBuf) {
+        let repo = init_repo(name);
+        let bare = std::env::temp_dir()
+            .join(format!("kb-git-{name}-remote-{}.git", std::process::id()));
+        let _ = std::fs::remove_dir_all(&bare);
+        Command::new("git").args(["init", "--bare", "-q"]).arg(&bare).output().unwrap();
+
+        commit_file(&repo, "a.md", "x", "2026-01-01T00:00:00+09:00");
+        set_remote(&repo, &bare.to_string_lossy()).unwrap();
+        run(&repo, &["push", "-q", "-u", "origin", "HEAD:master"]).unwrap();
+        (repo, bare)
+    }
+
+    #[test]
+    fn lists_branches_from_the_remote() {
+        let (repo, bare) = with_remote("branches");
+        run(&repo, &["push", "-q", "origin", "HEAD:topic"]).unwrap();
+
+        let mut branches = remote_branches(&repo, None).unwrap();
+        branches.sort();
+        assert_eq!(branches, vec!["master", "topic"]);
+
+        std::fs::remove_dir_all(&repo).unwrap();
+        std::fs::remove_dir_all(&bare).unwrap();
+    }
+
+    #[test]
+    fn renaming_a_branch_moves_it() {
+        let (repo, bare) = with_remote("rename");
+        run(&repo, &["push", "-q", "origin", "HEAD:topic"]).unwrap();
+
+        rename_remote_branch(&repo, "topic", "renamed").unwrap();
+
+        let branches = remote_branches(&repo, None).unwrap();
+        assert!(branches.contains(&"renamed".to_string()));
+        assert!(!branches.contains(&"topic".to_string()));
+
+        std::fs::remove_dir_all(&repo).unwrap();
+        std::fs::remove_dir_all(&bare).unwrap();
+    }
+
+    /// git refuses to delete the branch a remote's HEAD points at, so say so
+    /// before pushing anything rather than after.
+    #[test]
+    fn the_default_branch_is_refused_up_front() {
+        let (repo, bare) = with_remote("defaultbranch");
+        let before = remote_branches(&repo, None).unwrap();
+
+        let error = rename_remote_branch(&repo, "master", "main").unwrap_err().to_string();
+        assert!(error.contains("default branch"), "{error}");
+        assert!(delete_remote_branch(&repo, "master").is_err());
+
+        // Nothing was created on the way to failing.
+        assert_eq!(remote_branches(&repo, None).unwrap(), before);
+
+        std::fs::remove_dir_all(&repo).unwrap();
+        std::fs::remove_dir_all(&bare).unwrap();
+    }
+
+    #[test]
+    fn resetting_a_branch_empties_it() {
+        let (repo, bare) = with_remote("reset");
+        run(&repo, &["push", "-q", "origin", "HEAD:topic"]).unwrap();
+
+        reset_remote_branch(&repo, "topic").unwrap();
+
+        // One empty commit, and the file is gone from that branch.
+        let log = run(&repo, &["ls-remote", "origin", "refs/heads/topic"]).unwrap();
+        assert!(!log.trim().is_empty());
+        assert!(remote_branches(&repo, None).unwrap().contains(&"topic".to_string()));
+
+        std::fs::remove_dir_all(&repo).unwrap();
+        std::fs::remove_dir_all(&bare).unwrap();
+    }
+
+    #[test]
+    fn reads_and_writes_the_author() {
+        let repo = init_repo("author");
+        set_author(&repo, Some("Someone"), Some("someone@example.com")).unwrap();
+        let (name, email) = author(&repo);
+        assert_eq!(name.as_deref(), Some("Someone"));
+        assert_eq!(email.as_deref(), Some("someone@example.com"));
         std::fs::remove_dir_all(&repo).unwrap();
     }
 

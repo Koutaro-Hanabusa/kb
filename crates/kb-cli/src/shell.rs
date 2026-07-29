@@ -45,6 +45,19 @@ pub fn page(path: &Path) -> Result<()> {
     launch(&pager, path)
 }
 
+/// Show a directory in a terminal file browser.
+///
+/// The candidates are `nb`'s, in its order; `ls` is the fallback that always
+/// exists.
+pub fn browse_directory(dir: &Path) -> Result<()> {
+    for browser in ["ranger", "mc", "vifm", "joshuto", "lsd", "eza"] {
+        if has_command(browser) {
+            return launch(browser, dir);
+        }
+    }
+    launch("ls", dir)
+}
+
 /// Open a URL in the browser.
 pub fn open_url(url: &str) -> Result<()> {
     let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };

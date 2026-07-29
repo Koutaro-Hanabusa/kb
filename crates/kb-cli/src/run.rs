@@ -610,11 +610,125 @@ pub fn notebooks<W: Write>(ctx: &mut Ctx<'_, W>, args: &NotebooksArgs) -> Result
             if path.exists() {
                 bail!("already exists: {}", path.display());
             }
-            std::fs::create_dir_all(&path)
-                .with_context(|| format!("creating {}", path.display()))?;
-            git::init(&path)?;
+            match &add.remote {
+                Some(url) => git::clone(url, &path, add.branch.as_deref())?,
+                None => {
+                    std::fs::create_dir_all(&path)
+                        .with_context(|| format!("creating {}", path.display()))?;
+                    git::init(&path)?;
+                }
+            }
+            git::set_author(&path, add.author_name.as_deref(), add.email.as_deref())?;
             writeln!(ctx.out, "Added {}", path.display())?;
         }
+        Some(NotebooksCommand::Author(author)) => {
+            let root = ctx.notebook(author.notebook.as_deref())?.root.clone();
+            if author.name.is_some() || author.email.is_some() {
+                git::set_author(&root, author.name.as_deref(), author.email.as_deref())?;
+            }
+            let (name, email) = git::author(&root);
+            writeln!(ctx.out, "name   {}", name.unwrap_or_else(|| "(unset)".into()))?;
+            writeln!(ctx.out, "email  {}", email.unwrap_or_else(|| "(unset)".into()))?;
+        }
+        Some(NotebooksCommand::Init(init)) => {
+            let path = match &init.path {
+                Some(path) => path.clone(),
+                None => std::env::current_dir().context("no current directory")?,
+            };
+            match &init.remote {
+                Some(url) => git::clone(url, &path, init.branch.as_deref())?,
+                None => {
+                    std::fs::create_dir_all(&path)
+                        .with_context(|| format!("creating {}", path.display()))?;
+                    git::init(&path)?;
+                }
+            }
+            writeln!(ctx.out, "{}", path.display())?;
+        }
+        Some(NotebooksCommand::Export(export)) => {
+            let source = ctx.notebook(Some(&export.name))?.root.clone();
+            let destination = match &export.path {
+                Some(path) if path.is_dir() => path.join(&export.name),
+                Some(path) => path.clone(),
+                None => std::env::current_dir()?.join(&export.name),
+            };
+            if destination.exists() {
+                bail!("already exists: {}", destination.display());
+            }
+            copy_tree(&source, &destination)?;
+            writeln!(ctx.out, "{}", destination.display())?;
+        }
+        Some(NotebooksCommand::Import(import)) => {
+            if !import.path.is_dir() {
+                bail!("not a directory: {}", import.path.display());
+            }
+            let name = match &import.name {
+                Some(name) => name.clone(),
+                None => import
+                    .path
+                    .file_name()
+                    .context("path has no final component")?
+                    .to_string_lossy()
+                    .into_owned(),
+            };
+            let destination = ctx.workspace.root.join(&name);
+            if destination.exists() {
+                bail!("already exists: {}", destination.display());
+            }
+            copy_tree(&import.path, &destination)?;
+            writeln!(ctx.out, "{}", destination.display())?;
+        }
+        Some(NotebooksCommand::Open(target)) => {
+            let root = ctx.notebook(target.notebook.as_deref())?.root.clone();
+            ctx.out.flush()?;
+            return shell::open_externally(&root);
+        }
+        Some(NotebooksCommand::Peek(target)) => {
+            let root = ctx.notebook(target.notebook.as_deref())?.root.clone();
+            ctx.out.flush()?;
+            return shell::browse_directory(&root);
+        }
+        Some(NotebooksCommand::Select(select)) => {
+            // `nb select` does not persist the choice, so this only reports
+            // which notebook the selector lands in.
+            let parsed = Selector::parse(&select.selector);
+            let name = ctx.notebook(parsed.notebook.as_deref())?.name.clone();
+            writeln!(ctx.out, "{name}")?;
+        }
+        Some(NotebooksCommand::Show(show)) => {
+            let notebook = ctx.notebook(show.name.as_deref())?.clone();
+            if show.path {
+                writeln!(ctx.out, "{}", notebook.root.display())?;
+            } else if show.name_only {
+                writeln!(ctx.out, "{}", notebook.name)?;
+            } else {
+                let archived = kb_core::todo::is_archived(&notebook.root);
+                writeln!(ctx.out, "name      {}", notebook.name)?;
+                writeln!(ctx.out, "path      {}", notebook.root.display())?;
+                writeln!(ctx.out, "items     {}", items::count(&notebook.root)?)?;
+                writeln!(ctx.out, "archived  {}", if archived { "yes" } else { "no" })?;
+                if git::is_repository(&notebook.root) {
+                    let branch = git::current_branch(&notebook.root).unwrap_or_default();
+                    let remote =
+                        git::remote_url(&notebook.root).unwrap_or_else(|_| "(none)".into());
+                    writeln!(ctx.out, "branch    {branch}")?;
+                    writeln!(ctx.out, "remote    {remote}")?;
+                }
+            }
+        }
+        Some(NotebooksCommand::Status(target)) => {
+            for notebook in ctx.workspace.select(target.notebook.as_deref())? {
+                let archived = kb_core::todo::is_archived(&notebook.root);
+                writeln!(
+                    ctx.out,
+                    "{}  {}",
+                    ctx.style.path(&notebook.name),
+                    if archived { "archived" } else { "active" }
+                )?;
+            }
+        }
+        Some(NotebooksCommand::Archive(target)) => return archive(ctx, target, true),
+        Some(NotebooksCommand::Unarchive(target)) => return archive(ctx, target, false),
         Some(NotebooksCommand::Delete(delete)) => {
             let notebook = ctx.notebook(Some(&delete.name))?;
             let root = notebook.root.clone();
@@ -1344,7 +1458,60 @@ pub fn remote<W: Write>(ctx: &mut Ctx<'_, W>, args: &RemoteArgs) -> Result<()> {
         Some(RemoteCommand::Set(set)) => {
             let root = ctx.notebook(set.notebook.as_deref())?.root.clone();
             git::set_remote(&root, &set.url)?;
+            if let Some(branch) = &set.branch {
+                git::set_upstream(&root, branch)?;
+            }
             writeln!(ctx.out, "{}", set.url)?;
+        }
+        Some(RemoteCommand::Branches(branches)) => {
+            let root = ctx.notebook(branches.notebook.as_deref())?.root.clone();
+            for branch in git::remote_branches(&root, branches.url.as_deref())? {
+                writeln!(ctx.out, "{branch}")?;
+            }
+        }
+        Some(RemoteCommand::Delete(target)) => {
+            let root = ctx.notebook(target.notebook.as_deref())?.root.clone();
+            if !target.force {
+                ctx.out.flush()?;
+                if !shell::confirm(&format!("Delete branch {} from the remote?", target.branch))? {
+                    writeln!(ctx.out, "Cancelled.")?;
+                    return Ok(());
+                }
+            }
+            git::delete_remote_branch(&root, &target.branch)?;
+            writeln!(ctx.out, "deleted {}", target.branch)?;
+        }
+        Some(RemoteCommand::Rename(rename)) => {
+            let root = ctx.notebook(rename.notebook.as_deref())?.root.clone();
+            let from = match &rename.branch {
+                Some(branch) => branch.clone(),
+                None => git::current_branch(&root)?,
+            };
+            if !rename.force {
+                ctx.out.flush()?;
+                if !shell::confirm(&format!("Rename remote branch {from} to {}?", rename.name))? {
+                    writeln!(ctx.out, "Cancelled.")?;
+                    return Ok(());
+                }
+            }
+            git::rename_remote_branch(&root, &from, &rename.name)?;
+            writeln!(ctx.out, "{from} → {}", rename.name)?;
+        }
+        Some(RemoteCommand::Reset(target)) => {
+            let root = ctx.notebook(target.notebook.as_deref())?.root.clone();
+            if !target.force {
+                ctx.out.flush()?;
+                // This discards history on the remote; make that explicit.
+                if !shell::confirm(&format!(
+                    "Reset branch {} on the remote, discarding its history?",
+                    target.branch
+                ))? {
+                    writeln!(ctx.out, "Cancelled.")?;
+                    return Ok(());
+                }
+            }
+            git::reset_remote_branch(&root, &target.branch)?;
+            writeln!(ctx.out, "reset {}", target.branch)?;
         }
         Some(RemoteCommand::Remove(remove)) => {
             let notebook = ctx.notebook(remove.notebook.as_deref())?.clone();
@@ -1483,6 +1650,26 @@ pub fn env<W: Write>(ctx: &mut Ctx<'_, W>, args: &EnvArgs) -> Result<()> {
         }
         for (name, value) in settings.entries() {
             writeln!(ctx.out, "set       {name} = {value}")?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy a directory tree, including the git repository inside it.
+fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
+    std::fs::create_dir_all(destination)
+        .with_context(|| format!("creating {}", destination.display()))?;
+
+    for entry in std::fs::read_dir(source)
+        .with_context(|| format!("reading {}", source.display()))?
+    {
+        let entry = entry?;
+        let target = destination.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)
+                .with_context(|| format!("copying {}", entry.path().display()))?;
         }
     }
     Ok(())
