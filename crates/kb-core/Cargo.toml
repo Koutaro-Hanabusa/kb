@@ -1,0 +1,17 @@
+[package]
+name = "kb-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core library for kb: note discovery, frontmatter parsing, and full-text search over Markdown knowledge bases"
+
+[dependencies]
+anyhow = "1.0.104"
+grep-matcher = "0.1.9"
+grep-regex = "0.1.14"
+grep-searcher = "0.1.17"
+ignore = "0.4.31"
+jiff = { version = "0.2.35", features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_yaml_ng = "0.10.0"
