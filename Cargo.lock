@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "kb-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -472,7 +472,7 @@ dependencies = [
 
 [[package]]
 name = "kb-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "grep-matcher",
