@@ -169,9 +169,8 @@ pub fn create(
         spec.tags.clone()
     };
     let contents = format!(
-        "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{}",
-        crate::frontmatter::yaml_scalar(&heading(spec, &title)),
-        crate::frontmatter::yaml_tags(&tags),
+        "{}\n{}",
+        crate::frontmatter::render_block("Bookmark", &heading(spec, &title), &tags, &stamp),
         render(spec, &title),
     );
     std::fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;

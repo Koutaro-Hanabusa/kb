@@ -1330,9 +1330,8 @@ pub fn todo<W: Write>(ctx: &mut Ctx<'_, W>, args: &TodoArgs) -> Result<()> {
                 add.tags.clone()
             };
             let contents = format!(
-                "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{}",
-                kb_core::frontmatter::yaml_scalar(&task),
-                kb_core::frontmatter::yaml_tags(&tags),
+                "{}\n{}",
+                kb_core::frontmatter::render_block("Todo", &task, &tags, &stamp),
                 kb_core::todo::render(&task, &add.tags),
             );
             std::fs::write(&path, contents)

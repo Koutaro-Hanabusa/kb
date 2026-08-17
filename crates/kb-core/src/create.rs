@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use jiff::Zoned;
 
-use crate::frontmatter::{yaml_scalar, yaml_tags};
+use crate::frontmatter::render_block;
 use crate::note::{Note, filename_stem, format_timestamp, timestamp_stem};
 use crate::workspace::Notebook;
 
@@ -100,12 +100,9 @@ pub fn create(notebook: &Notebook, spec: &NewNote, now: &Zoned) -> Result<PathBu
         None => derived_title(&body, &path),
     };
 
-    // `type` is the one field the Open Knowledge Format requires; every note
-    // here is the same kind of concept, so it is a constant rather than a knob.
     let contents = format!(
-        "---\ntype: Note\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{body}",
-        yaml_scalar(&title),
-        yaml_tags(&spec.effective_tags()),
+        "{}\n{body}",
+        render_block("Note", &title, &spec.effective_tags(), &stamp),
     );
     std::fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
     Ok(path)

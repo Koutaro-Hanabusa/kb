@@ -207,6 +207,21 @@ pub fn yaml_tags(tags: &[String]) -> String {
     format!("[{}]", items.join(", "))
 }
 
+/// Render the block every newly written note opens with, closing delimiter
+/// included.
+///
+/// `kind` is the Open Knowledge Format `type` — the one key that format
+/// requires, and the only thing that differs between a note, a bookmark and a
+/// todo. Notes, bookmarks and todos each used to carry their own copy of this
+/// format string, which is how the first `type` landed on only one of them.
+pub fn render_block(kind: &str, title: &str, tags: &[String], stamp: &str) -> String {
+    format!(
+        "---\ntype: {kind}\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n",
+        yaml_scalar(title),
+        yaml_tags(tags),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +331,29 @@ mod tests {
     fn touching_without_an_updated_key_changes_nothing() {
         let raw = "---\ntitle: T\n---\n\nbody\n";
         assert_eq!(touch_updated(raw, "2026-07-29T13:30:00+09:00"), raw);
+    }
+
+    /// Every writer of a new note goes through `render_block`, so this is the
+    /// one place that has to keep the OKF-required `type` key.
+    #[test]
+    fn a_rendered_block_carries_its_type_and_parses_back() {
+        let raw = format!(
+            "{}\nbody\n",
+            render_block(
+                "Bookmark",
+                "T",
+                &["bookmark".into()],
+                "2026-08-17T16:00:00+09:00"
+            )
+        );
+        assert!(raw.starts_with("---\ntype: Bookmark\n"), "{raw}");
+
+        let doc = Document::split(&raw);
+        let fm = doc.frontmatter.expect("frontmatter");
+        assert!(fm.has("type"));
+        assert_eq!(fm.title.as_deref(), Some("T"));
+        assert_eq!(fm.tags, vec!["bookmark"]);
+        assert_eq!(doc.body, "\nbody\n");
     }
 
     #[test]
