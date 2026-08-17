@@ -100,8 +100,10 @@ pub fn create(notebook: &Notebook, spec: &NewNote, now: &Zoned) -> Result<PathBu
         None => derived_title(&body, &path),
     };
 
+    // `type` is the one field the Open Knowledge Format requires; every note
+    // here is the same kind of concept, so it is a constant rather than a knob.
     let contents = format!(
-        "---\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{body}",
+        "---\ntype: Note\ntitle: {}\ntags: {}\ncreated: {stamp}\nupdated: {stamp}\n---\n\n{body}",
         yaml_scalar(&title),
         yaml_tags(&spec.effective_tags()),
     );
@@ -191,6 +193,9 @@ mod tests {
         assert_eq!(note.tags, vec!["knowledge"]);
         assert!(note.created.is_some());
         assert!(note.has_frontmatter);
+        // OKF conformance: `type` is the only field the format requires.
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.starts_with("---\ntype: Note\n"), "{raw}");
         std::fs::remove_dir_all(&nb.root).unwrap();
     }
 
