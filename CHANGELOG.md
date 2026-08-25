@@ -1,5 +1,7 @@
 # Changelog
 
+## [v0.1.2](https://github.com/Koutaro-Hanabusa/kb/compare/v0.1.1...v0.1.2) - 2026-08-17
+
 ## [v0.1.1](https://github.com/Koutaro-Hanabusa/kb/compare/v0.1.0...v0.1.1) - 2026-07-29
 
 - Default new knowledge bases to .kb by @Koutaro-Hanabusa in https://github.com/Koutaro-Hanabusa/kb/pull/7
